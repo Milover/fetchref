@@ -1,6 +1,7 @@
 package fetch
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 
@@ -43,26 +44,45 @@ func Fetch(dois []string) error {
 		if err != nil {
 			return fmt.Errorf("%w", err)
 		}
+		defer res.Body.Close()
 
 		body, err := html.Parse(res.Body)
 		if err != nil {
 			return fmt.Errorf("%w", err)
 		}
 
+		var getText func(*html.Node, *bytes.Buffer)
+		getText = func(n *html.Node, buf *bytes.Buffer) {
+			if n.Type == html.TextNode {
+				buf.WriteString(n.Data)
+			}
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				getText(c, buf)
+			}
+		}
+
 		var f func(*html.Node)
 		f = func(n *html.Node) {
-			if n.Type == html.ElementNode && n.Data == "button" {
-				for _, a := range n.Attr {
-					if a.Key == "onclick" {
-						fmt.Println(a.Val)
-						break
+			if n.Type == html.ElementNode {
+				if n.Data == "button" {
+					for _, a := range n.Attr {
+						if a.Key == "onclick" {
+							fmt.Println(a.Val)
+							break
+						}
 					}
+				}
+				if n.Data == "i" {
+					text := &bytes.Buffer{}
+					getText(n, text)
+					fmt.Println(text)
 				}
 			}
 			for c := n.FirstChild; c != nil; c = c.NextSibling {
 				f(c)
 			}
 		}
+
 		f(body)
 	}
 
