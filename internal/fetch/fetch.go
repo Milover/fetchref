@@ -25,6 +25,11 @@ type Article struct {
 	Url   string
 }
 
+type htmlSelectorExtractor struct {
+	selector func(*html.Node) bool
+	extractor func(*html.Node) string
+}
+
 // Fetch downloads articles from Sci-Hub from a list of supplied DOIs.
 func Fetch(dois []string) error {
 
@@ -82,38 +87,42 @@ func processRequest(res *http.Response, a *Article) error {
 	//	during the initial (and final) node evaluation.
 	a.Title = getFromHtml(
 		body,
-		func(n *html.Node) bool {
-			return n.Type == html.ElementNode && n.Data == "i"
-		},
-		func(n *html.Node) string {
-			b := &bytes.Buffer{}
-			b.WriteString(n.FirstChild.Data)
-			ss := strings.SplitN(b.String(), ".", -1)
+		htmlSelectorExtractor {
+			selector: func(n *html.Node) bool {
+				return n.Type == html.ElementNode && n.Data == "i"
+			},
+			extractor: func(n *html.Node) string {
+				b := &bytes.Buffer{}
+				b.WriteString(n.FirstChild.Data)
+				ss := strings.SplitN(b.String(), ".", -1)
 
-			var s string
-			for i := 0; i < len(ss) - 2; i++ {
-				if len(s) != 0 {
-					s += "."
+				var s string
+				for i := 0; i < len(ss) - 2; i++ {
+					if len(s) != 0 {
+						s += "."
+					}
+					s += ss[i]
 				}
-				s += ss[i]
-			}
-			return s
+				return s
+			},
 		},
 	)
 	a.Url = getFromHtml(
 		body,
-		func(n *html.Node) bool {
-			return n.Type == html.ElementNode && n.Data == "button"
-		},
-		func(n *html.Node) string {
-			for _, atr := range n.Attr {
-				if atr.Key == "onclick" {
-					s := strings.TrimPrefix(atr.Val, "location.href='")
-					s = strings.TrimSuffix(s, "?download=true'")
-					return s
+		htmlSelectorExtractor {
+			selector: func(n *html.Node) bool {
+				return n.Type == html.ElementNode && n.Data == "button"
+			},
+			extractor: func(n *html.Node) string {
+				for _, atr := range n.Attr {
+					if atr.Key == "onclick" {
+						s := strings.TrimPrefix(atr.Val, "location.href='")
+						s = strings.TrimSuffix(s, "?download=true'")
+						return s
+					}
 				}
-			}
-			return ""
+				return ""
+			},
 		},
 	)
 
@@ -124,17 +133,13 @@ func processRequest(res *http.Response, a *Article) error {
 // If the current node in the HTML tree is selected by the 'selector', then
 // data is extracted from the node by the 'exctractor', otherwise another node
 // is selected. Both children and sibling nodes are walked.
-func getFromHtml(
-	n *html.Node,
-	selector func(*html.Node) bool,
-	extractor func(*html.Node) string,
-) string {
+func getFromHtml(n *html.Node, e htmlSelectorExtractor) string {
 	var s string
-	if selector(n) {
-		s += extractor(n)
+	if e.selector(n) {
+		s += e.extractor(n)
 	}
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		s += getFromHtml(c, selector, extractor)
+		s += getFromHtml(c, e)
 	}
 
 	return s
