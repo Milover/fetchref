@@ -28,6 +28,8 @@ type Article struct {
 type htmlSelectorExtractor struct {
 	selector func(*html.Node) bool
 	extractor func(*html.Node) string
+
+	data *string
 }
 
 // Fetch downloads articles from Sci-Hub from a list of supplied DOIs.
@@ -81,12 +83,8 @@ func processRequest(res *http.Response, a *Article) error {
 	}
 	defer res.Body.Close()
 
-	// NOTE:
-	//	With this approach we're evaluating all nodes each time we want to
-	//	extract a piece of data. Ideally we would want to extract all data
-	//	during the initial (and final) node evaluation.
-	a.Title = getFromHtml(
-		body,
+	// define selectors/extractors
+	ses := []htmlSelectorExtractor {
 		htmlSelectorExtractor {
 			selector: func(n *html.Node) bool {
 				return n.Type == html.ElementNode && n.Data == "i"
@@ -105,10 +103,8 @@ func processRequest(res *http.Response, a *Article) error {
 				}
 				return s
 			},
+			data: &a.Title,
 		},
-	)
-	a.Url = getFromHtml(
-		body,
 		htmlSelectorExtractor {
 			selector: func(n *html.Node) bool {
 				return n.Type == html.ElementNode && n.Data == "button"
@@ -123,8 +119,11 @@ func processRequest(res *http.Response, a *Article) error {
 				}
 				return ""
 			},
+			data: &a.Url,
 		},
-	)
+	}
+
+	getFromHtml(body, ses)
 
 	return nil
 }
@@ -133,14 +132,13 @@ func processRequest(res *http.Response, a *Article) error {
 // If the current node in the HTML tree is selected by the 'selector', then
 // data is extracted from the node by the 'exctractor', otherwise another node
 // is selected. Both children and sibling nodes are walked.
-func getFromHtml(n *html.Node, e htmlSelectorExtractor) string {
-	var s string
-	if e.selector(n) {
-		s += e.extractor(n)
+func getFromHtml(n *html.Node, es []htmlSelectorExtractor) {
+	for _, e := range es {
+		if e.selector(n) {
+			*e.data += e.extractor(n)
+		}
 	}
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		s += getFromHtml(c, e)
+		getFromHtml(c, es)
 	}
-
-	return s
 }
