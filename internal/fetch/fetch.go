@@ -1,11 +1,11 @@
 package fetch
 
 import (
-	"bytes"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
+	"unicode"
 
 	"golang.org/x/net/html"
 )
@@ -20,13 +20,49 @@ var mirrors = []string{
 // The Article holds data needed to download and write the article to disc.
 // The DOI is used to fetch the title and PDF URL from Sci-Hub.
 type Article struct {
-	Doi   string
-	Title string
-	Url   string
+	Doi      string
+	Title    string
+	FileName string
+	Url      string
 }
 
+// FileName generates and caches the file name of the article.
+// All punctuation, spaces and control codes are replaces by '_'s, which are
+// squeezed, and a '.pdf' extension is added.
+func (a *Article) GenerateFileName() {
+	if len(a.FileName) != 0 || len(a.Title) == 0 {
+		return
+	}
+
+	var b strings.Builder
+	var cache rune
+
+	b.Grow(len(a.Title))
+	for _, r := range a.Title {
+		if unicode.In(r, unicode.P, unicode.Z, unicode.Cc) {
+			if cache == '_' {
+				continue
+			}
+			cache = '_'
+		} else {
+			cache = unicode.ToLower(r)
+		}
+		b.WriteRune(cache)
+	}
+	b.WriteString(".pdf")
+
+	a.FileName = b.String()
+}
+
+// Reset resets all article data.
+func (a *Article) Reset() {
+	*a = Article{}
+}
+
+// htmlSelectorExtractor holds selector and extractor functions which work
+// on HTML tree nodes, and a pointer to a data string.
 type htmlSelectorExtractor struct {
-	selector func(*html.Node) bool
+	selector  func(*html.Node) bool
 	extractor func(*html.Node) string
 
 	data *string
@@ -53,6 +89,8 @@ func Fetch(dois []string) error {
 
 		fmt.Printf("title: %q\n", a.Title)
 		fmt.Printf("link: %q\n", a.Url)
+		a.GenerateFileName()
+		fmt.Printf("file: %q\n", a.FileName)
 	}
 
 	return nil
@@ -84,28 +122,29 @@ func processRequest(res *http.Response, a *Article) error {
 	defer res.Body.Close()
 
 	// define selectors/extractors
-	ses := []htmlSelectorExtractor {
-		htmlSelectorExtractor {
+	ses := []htmlSelectorExtractor{
+		{
 			selector: func(n *html.Node) bool {
 				return n.Type == html.ElementNode && n.Data == "i"
 			},
 			extractor: func(n *html.Node) string {
-				b := &bytes.Buffer{}
-				b.WriteString(n.FirstChild.Data)
-				ss := strings.SplitN(b.String(), ".", -1)
+				var b strings.Builder
+				bufSize := 150 // educated guess
 
-				var s string
-				for i := 0; i < len(ss) - 2; i++ {
-					if len(s) != 0 {
-						s += "."
-					}
-					s += ss[i]
+				b.Grow(bufSize)
+				b.WriteString(n.FirstChild.Data)
+				ss := strings.SplitAfterN(b.String(), ".", -1)
+
+				b.Reset()
+				b.Grow(bufSize)
+				for i := 0; i < len(ss)-2; i++ {
+					b.WriteString(ss[i])
 				}
-				return s
+				return strings.TrimSuffix(b.String(), ".")
 			},
 			data: &a.Title,
 		},
-		htmlSelectorExtractor {
+		{
 			selector: func(n *html.Node) bool {
 				return n.Type == html.ElementNode && n.Data == "button"
 			},
@@ -122,7 +161,6 @@ func processRequest(res *http.Response, a *Article) error {
 			data: &a.Url,
 		},
 	}
-
 	getFromHtml(body, ses)
 
 	return nil
