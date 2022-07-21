@@ -2,11 +2,13 @@ package fetch
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
-	"unicode"
 
+	"github.com/Milover/fetchpaper/internal/article"
 	"golang.org/x/net/html"
 )
 
@@ -15,48 +17,6 @@ var mirrors = []string{
 	"sci-hub.se",
 	"sci-hub.st",
 	"sci-hub.ru",
-}
-
-// The Article holds data needed to download and write the article to disc.
-// The DOI is used to fetch the title and PDF URL from Sci-Hub.
-type Article struct {
-	Doi      string
-	Title    string
-	FileName string
-	Url      string
-}
-
-// FileName generates and caches the file name of the article.
-// All punctuation, spaces and control codes are replaces by '_'s, which are
-// squeezed, and a '.pdf' extension is added.
-func (a *Article) GenerateFileName() {
-	if len(a.FileName) != 0 || len(a.Title) == 0 {
-		return
-	}
-
-	var b strings.Builder
-	var cache rune
-
-	b.Grow(len(a.Title))
-	for _, r := range a.Title {
-		if unicode.In(r, unicode.P, unicode.Z, unicode.Cc) {
-			if cache == '_' {
-				continue
-			}
-			cache = '_'
-		} else {
-			cache = unicode.ToLower(r)
-		}
-		b.WriteRune(cache)
-	}
-	b.WriteString(".pdf")
-
-	a.FileName = b.String()
-}
-
-// Reset resets all article data.
-func (a *Article) Reset() {
-	*a = Article{}
 }
 
 // htmlSelectorExtractor holds selector and extractor functions which work
@@ -68,51 +28,73 @@ type htmlSelectorExtractor struct {
 	data *string
 }
 
+// getFromHtmlData walks an HTML tree and extracts data.
+// If the current node in the HTML tree is selected by the 'selector', then
+// data is extracted from the node by the 'exctractor', otherwise another node
+// is selected. Both children and sibling nodes are walked.
+func getFromHtml(n *html.Node, es []htmlSelectorExtractor) {
+	for _, e := range es {
+		if e.selector(n) {
+			*e.data += e.extractor(n)
+		}
+	}
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		getFromHtml(c, es)
+	}
+}
+
 // Fetch downloads articles from Sci-Hub from a list of supplied DOIs.
 func Fetch(dois []string) error {
 
-	articles := make([]Article, len(dois))
+	articles := make([]article.Article, len(dois))
 	for i, d := range dois {
-		articles[i] = Article{Doi: d}
+		articles[i] = article.Article{Doi: d}
+		articles[i].GeneratorFunc(article.SnakeCaseGenerator)
 	}
 
 	for _, a := range articles {
-		res, err := sendRequest(&a)
+		err := doInfoRequest(&a)
 		if err != nil {
 			return fmt.Errorf("%w", err)
 		}
 
-		err = processRequest(res, &a)
+		err = doDownloadRequest(a)
 		if err != nil {
 			return fmt.Errorf("%w", err)
 		}
 
+		// TODO: remove
 		fmt.Printf("title: %q\n", a.Title)
 		fmt.Printf("link: %q\n", a.Url)
-		a.GenerateFileName()
-		fmt.Printf("file: %q\n", a.FileName)
+		fmt.Printf("file: %q\n", a.GenerateFileName())
 	}
 
 	return nil
 }
 
-// TODO: reimplement with timeouts and mirror switching
-// sendRequest sends a GET request to 'Sci-Hub/DOI'.
+// sendGetRequest sends a GET request to 'Sci-Hub/DOI'.
 // The request is sent to a different Sci-Hub mirror if the request times out.
 // An error is returned if a valid response cannot be obtained.
-func sendRequest(a *Article) (*http.Response, error) {
-	res, err := http.Get("https://" + mirrors[0] + "/" + url.QueryEscape(a.Doi))
+// TODO: reimplement with timeouts
+func sendGetRequest(url string) (*http.Response, error) {
+	res, err := http.Get(url)
 	if err != nil {
 		return res, fmt.Errorf("%w", err)
+	}
+	if res.StatusCode > 399 {
+		return res, fmt.Errorf("%s", res.Status)
 	}
 
 	return res, nil
 }
 
 // processRequest extracts the article title and URL from a HTML response.
-func processRequest(res *http.Response, a *Article) error {
-	if res.StatusCode > 399 {
-		fmt.Errorf("%s", res.Status)
+func doInfoRequest(a *article.Article) error {
+	// TODO: add mirror switching
+	url := "https://" + mirrors[0] + "/" + url.QueryEscape(a.Doi)
+	res, err := sendGetRequest(url)
+	if err != nil {
+		return fmt.Errorf("%w", err)
 	}
 
 	body, err := html.Parse(res.Body)
@@ -151,9 +133,11 @@ func processRequest(res *http.Response, a *Article) error {
 			extractor: func(n *html.Node) string {
 				for _, atr := range n.Attr {
 					if atr.Key == "onclick" {
-						s := strings.TrimPrefix(atr.Val, "location.href='")
-						s = strings.TrimSuffix(s, "?download=true'")
-						return s
+						r := strings.NewReplacer(
+							"location.href='", "https:",
+							"?download=true'", "",
+						)
+						return r.Replace(atr.Val)
 					}
 				}
 				return ""
@@ -166,17 +150,22 @@ func processRequest(res *http.Response, a *Article) error {
 	return nil
 }
 
-// getFromHtmlData walks an HTML tree and extracts data.
-// If the current node in the HTML tree is selected by the 'selector', then
-// data is extracted from the node by the 'exctractor', otherwise another node
-// is selected. Both children and sibling nodes are walked.
-func getFromHtml(n *html.Node, es []htmlSelectorExtractor) {
-	for _, e := range es {
-		if e.selector(n) {
-			*e.data += e.extractor(n)
-		}
+// downloadArticle downloads the article and writes a PDF to disc. The download
+// URL and the file name are retrieved from the Article.
+func doDownloadRequest(a article.Article) error {
+	out, err := os.Create(a.GenerateFileName() + ".pdf")
+	if err != nil {
+		panic(err)
 	}
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		getFromHtml(c, es)
+	defer out.Close()
+
+	res, err := sendGetRequest(a.Url)
+	defer res.Body.Close()
+
+	_, err = io.Copy(out, res.Body)
+	if err != nil {
+		return fmt.Errorf("%w", err)
 	}
+
+	return nil
 }
