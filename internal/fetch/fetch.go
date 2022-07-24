@@ -58,8 +58,7 @@ func Fetch(dois []string) error {
 			return fmt.Errorf("%w", err)
 		}
 
-		err = doDownloadRequest(a)
-		if err != nil {
+		if err = doDownloadRequest(a); err != nil {
 			return fmt.Errorf("%w", err)
 		}
 
@@ -91,7 +90,9 @@ func sendGetRequest(url string) (*http.Response, error) {
 // processRequest extracts the article title and URL from a HTML response.
 func doInfoRequest(a *article.Article) error {
 	// TODO: add mirror switching
-	url := "https://" + mirrors[0] + "/" + url.QueryEscape(a.Doi)
+	m := mirrors[0]
+
+	url := "https://" + m + "/" + url.QueryEscape(a.Doi)
 	res, err := sendGetRequest(url)
 	if err != nil {
 		return fmt.Errorf("%w", err)
@@ -134,7 +135,7 @@ func doInfoRequest(a *article.Article) error {
 				for _, atr := range n.Attr {
 					if atr.Key == "onclick" {
 						r := strings.NewReplacer(
-							"location.href='", "https:",
+							"location.href='/", "",
 							"?download=true'", "",
 						)
 						return r.Replace(atr.Val)
@@ -146,6 +147,14 @@ func doInfoRequest(a *article.Article) error {
 		},
 	}
 	getFromHtml(body, ses)
+
+	// FIXME: this is disgusting
+	// finalize the url
+	prefix := "https:/"
+	if a.Url[0] != '/' {
+		prefix += "/" + m + "/"
+	}
+	a.Url = prefix + a.Url
 
 	return nil
 }
@@ -160,10 +169,12 @@ func doDownloadRequest(a article.Article) error {
 	defer out.Close()
 
 	res, err := sendGetRequest(a.Url)
+	if err != nil {
+		return fmt.Errorf("%w", err)
+	}
 	defer res.Body.Close()
 
-	_, err = io.Copy(out, res.Body)
-	if err != nil {
+	if _, err := io.Copy(out, res.Body); err != nil {
 		return fmt.Errorf("%w", err)
 	}
 
