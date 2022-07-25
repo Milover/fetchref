@@ -1,6 +1,7 @@
 package article
 
 import (
+	"net/url"
 	"strings"
 	"unicode"
 )
@@ -10,7 +11,7 @@ import (
 type Article struct {
 	Doi   string
 	Title string
-	Url   string
+	Url   *url.URL
 
 	// fileNameGenerator generates a file name for the article
 	fileNameGenerator func(Article) string

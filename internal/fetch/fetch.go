@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/Milover/fetchpaper/internal/article"
@@ -64,7 +65,7 @@ func Fetch(dois []string) error {
 
 		// TODO: remove
 		fmt.Printf("title: %q\n", a.Title)
-		fmt.Printf("link: %q\n", a.Url)
+		fmt.Printf("link: %q\n", a.Url.String())
 		fmt.Printf("file: %q\n", a.GenerateFileName())
 	}
 
@@ -92,8 +93,13 @@ func doInfoRequest(a *article.Article) error {
 	// TODO: add mirror switching
 	m := mirrors[0]
 
-	url := "https://" + m + "/" + url.QueryEscape(a.Doi)
-	res, err := sendGetRequest(url)
+	reqUrl := &url.URL{
+		Scheme: "https",
+		Host:   m,
+		Path:   a.Doi,
+	}
+
+	res, err := sendGetRequest(reqUrl.String())
 	if err != nil {
 		return fmt.Errorf("%w", err)
 	}
@@ -105,11 +111,13 @@ func doInfoRequest(a *article.Article) error {
 	defer res.Body.Close()
 
 	// define selectors/extractors
+	var articleUri string
 	ses := []htmlSelectorExtractor{
 		{
 			selector: func(n *html.Node) bool {
 				return n.Type == html.ElementNode && n.Data == "i"
 			},
+			// extract title
 			extractor: func(n *html.Node) string {
 				var b strings.Builder
 				bufSize := 150 // educated guess
@@ -131,30 +139,31 @@ func doInfoRequest(a *article.Article) error {
 			selector: func(n *html.Node) bool {
 				return n.Type == html.ElementNode && n.Data == "button"
 			},
+			// extract download link
 			extractor: func(n *html.Node) string {
 				for _, atr := range n.Attr {
 					if atr.Key == "onclick" {
-						r := strings.NewReplacer(
-							"location.href='/", "",
-							"?download=true'", "",
-						)
-						return r.Replace(atr.Val)
+						re := regexp.MustCompile(`location.href='(.*)'`)
+						match := re.FindStringSubmatch(atr.Val)
+						return match[len(match)-1]
 					}
 				}
 				return ""
 			},
-			data: &a.Url,
+			data: &articleUri,
 		},
 	}
 	getFromHtml(body, ses)
 
-	// FIXME: this is disgusting
 	// finalize the url
-	prefix := "https:/"
-	if a.Url[0] != '/' {
-		prefix += "/" + m + "/"
+	a.Url, err = url.Parse(articleUri)
+	if err != nil {
+		fmt.Errorf("%w", err)
 	}
-	a.Url = prefix + a.Url
+	a.Url.Scheme = "https"
+	if len(a.Url.Host) == 0 {
+		a.Url.Host = m
+	}
 
 	return nil
 }
@@ -168,7 +177,7 @@ func doDownloadRequest(a article.Article) error {
 	}
 	defer out.Close()
 
-	res, err := sendGetRequest(a.Url)
+	res, err := sendGetRequest(a.Url.String())
 	if err != nil {
 		return fmt.Errorf("%w", err)
 	}
