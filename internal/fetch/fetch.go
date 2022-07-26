@@ -1,13 +1,15 @@
 package fetch
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
-	"regexp"
-	"strings"
+	"time"
 
 	"github.com/Milover/fetchpaper/internal/article"
 	"golang.org/x/net/html"
@@ -18,30 +20,6 @@ var mirrors = []string{
 	"sci-hub.se",
 	"sci-hub.st",
 	"sci-hub.ru",
-}
-
-// htmlSelectorExtractor holds selector and extractor functions which work
-// on HTML tree nodes, and a pointer to a data string.
-type htmlSelectorExtractor struct {
-	selector  func(*html.Node) bool
-	extractor func(*html.Node) string
-
-	data *string
-}
-
-// getFromHtmlData walks an HTML tree and extracts data.
-// If the current node in the HTML tree is selected by the 'selector', then
-// data is extracted from the node by the 'exctractor', otherwise another node
-// is selected. Both children and sibling nodes are walked.
-func getFromHtml(n *html.Node, es []htmlSelectorExtractor) {
-	for _, e := range es {
-		if e.selector(n) {
-			*e.data += e.extractor(n)
-		}
-	}
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		getFromHtml(c, es)
-	}
 }
 
 // Fetch downloads articles from Sci-Hub from a list of supplied DOIs.
@@ -75,9 +53,14 @@ func Fetch(dois []string) error {
 // sendGetRequest sends a GET request to 'Sci-Hub/DOI'.
 // The request is sent to a different Sci-Hub mirror if the request times out.
 // An error is returned if a valid response cannot be obtained.
-// TODO: reimplement with timeouts
-func sendGetRequest(url string) (*http.Response, error) {
-	res, err := http.Get(url)
+func sendGetRequest(ctx context.Context, url string) (*http.Response, error) {
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("%w", err)
+	}
+
+	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return res, fmt.Errorf("%w", err)
 	}
@@ -88,18 +71,44 @@ func sendGetRequest(url string) (*http.Response, error) {
 	return res, nil
 }
 
-// processRequest extracts the article title and URL from a HTML response.
-func doInfoRequest(a *article.Article) error {
-	// TODO: add mirror switching
-	m := mirrors[0]
-
-	reqUrl := &url.URL{
+func infoRequestFromMirror(
+	ctx context.Context,
+	a article.Article,
+) (*http.Response, error) {
+	u := &url.URL{
 		Scheme: "https",
-		Host:   m,
 		Path:   a.Doi,
 	}
 
-	res, err := sendGetRequest(reqUrl.String())
+	for _, m := range mirrors {
+		u.Host = m
+
+		res, err := sendGetRequest(ctx, u.String())
+		if err != nil {
+			var e url.Error
+			if errors.Is(err, &e) {
+				if ue := err.(*url.Error); ue.Timeout() {
+					log.Println("connection timed out: %v", err)
+					continue
+				}
+			} else {
+				return res, fmt.Errorf("%w", err)
+			}
+		}
+
+		return res, err
+	}
+
+	panic("never reached")
+}
+
+// doInfoRequest extracts the article title and URL from a HTML response.
+func doInfoRequest(a *article.Article) error {
+
+	ctx, cncl := context.WithTimeout(context.Background(), time.Second*3)
+	defer cncl()
+
+	res, err := infoRequestFromMirror(ctx, *a)
 	if err != nil {
 		return fmt.Errorf("%w", err)
 	}
@@ -110,59 +119,20 @@ func doInfoRequest(a *article.Article) error {
 	}
 	defer res.Body.Close()
 
-	// define selectors/extractors
-	var articleUri string
 	ses := []htmlSelectorExtractor{
-		{
-			selector: func(n *html.Node) bool {
-				return n.Type == html.ElementNode && n.Data == "i"
-			},
-			// extract title
-			extractor: func(n *html.Node) string {
-				var b strings.Builder
-				bufSize := 150 // educated guess
-
-				b.Grow(bufSize)
-				b.WriteString(n.FirstChild.Data)
-				ss := strings.SplitAfterN(b.String(), ".", -1)
-
-				b.Reset()
-				b.Grow(bufSize)
-				for i := 0; i < len(ss)-2; i++ {
-					b.WriteString(ss[i])
-				}
-				return strings.TrimSuffix(b.String(), ".")
-			},
-			data: &a.Title,
-		},
-		{
-			selector: func(n *html.Node) bool {
-				return n.Type == html.ElementNode && n.Data == "button"
-			},
-			// extract download link
-			extractor: func(n *html.Node) string {
-				for _, atr := range n.Attr {
-					if atr.Key == "onclick" {
-						re := regexp.MustCompile(`location.href='(.*)'`)
-						match := re.FindStringSubmatch(atr.Val)
-						return match[len(match)-1]
-					}
-				}
-				return ""
-			},
-			data: &articleUri,
-		},
+		newHse(selectTitleNode, extractTitle),
+		newHse(selectUrlNode, extractUrl),
 	}
 	getFromHtml(body, ses)
 
-	// finalize the url
-	a.Url, err = url.Parse(articleUri)
+	a.Title = ses[0].data.String()
+	a.Url, err = url.Parse(ses[1].data.String())
 	if err != nil {
 		fmt.Errorf("%w", err)
 	}
 	a.Url.Scheme = "https"
 	if len(a.Url.Host) == 0 {
-		a.Url.Host = m
+		a.Url.Host = res.Request.URL.Host
 	}
 
 	return nil
@@ -177,7 +147,10 @@ func doDownloadRequest(a article.Article) error {
 	}
 	defer out.Close()
 
-	res, err := sendGetRequest(a.Url.String())
+	ctx, cncl := context.WithTimeout(context.Background(), time.Second*3)
+	defer cncl()
+
+	res, err := sendGetRequest(ctx, a.Url.String())
 	if err != nil {
 		return fmt.Errorf("%w", err)
 	}
