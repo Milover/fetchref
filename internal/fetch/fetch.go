@@ -25,28 +25,42 @@ var mirrors = []string{
 // Fetch downloads articles from Sci-Hub from a list of supplied DOIs.
 func Fetch(dois []string) error {
 
-	articles := make([]article.Article, len(dois))
+	ch := make(chan *article.Article, len(dois))
+
 	for i, d := range dois {
-		articles[i] = article.Article{Doi: d}
-		articles[i].GeneratorFunc(article.SnakeCaseGenerator)
+		a := article.Article{Doi: d}
+		a.GeneratorFunc(article.SnakeCaseGenerator)
+
+		go func() {
+			err := doInfoRequest(&a)
+			if err != nil {
+				ch <- nil
+				log.Println("%v", err)
+			}
+			fmt.Println(a.Title, "\n", a.Url.String())
+			ch <- &a
+
+			if i == len(dois) {
+				close(ch)
+			}
+		}()
 	}
 
-	for _, a := range articles {
-		err := doInfoRequest(&a)
-		if err != nil {
-			return fmt.Errorf("%w", err)
+	for {
+		select {
+		case a, ok := <-ch:
+			if !ok {
+				return nil
+			}
+			if a != nil {
+				go func() {
+					if err := doDownloadRequest(*a); err != nil {
+						log.Println("%v", err)
+					}
+				}()
+			}
 		}
-
-		if err = doDownloadRequest(a); err != nil {
-			return fmt.Errorf("%w", err)
-		}
-
-		// TODO: remove
-		fmt.Printf("title: %q\n", a.Title)
-		fmt.Printf("link: %q\n", a.Url.String())
-		fmt.Printf("file: %q\n", a.GenerateFileName())
 	}
-
 	return nil
 }
 
