@@ -26,8 +26,10 @@ var mirrors = []string{
 func Fetch(dois []string) error {
 
 	ch := make(chan *article.Article, len(dois))
+	sync := make(chan bool, len(dois))
+	e := false
 
-	for i, d := range dois {
+	for _, d := range dois {
 		a := article.Article{Doi: d}
 		a.GeneratorFunc(article.SnakeCaseGenerator)
 
@@ -35,12 +37,12 @@ func Fetch(dois []string) error {
 			err := doInfoRequest(&a)
 			if err != nil {
 				ch <- nil
+				e = true
 				log.Println("%v", err)
 			}
-			fmt.Println(a.Title, "\n", a.Url.String())
 			ch <- &a
-
-			if i == len(dois) {
+			sync <- true
+			if len(sync) == len(dois) {
 				close(ch)
 			}
 		}()
@@ -50,17 +52,22 @@ func Fetch(dois []string) error {
 		select {
 		case a, ok := <-ch:
 			if !ok {
+				if e {
+					return fmt.Errorf("error")
+				}
 				return nil
 			}
 			if a != nil {
 				go func() {
 					if err := doDownloadRequest(*a); err != nil {
+						e = true
 						log.Println("%v", err)
 					}
 				}()
 			}
 		}
 	}
+
 	return nil
 }
 
