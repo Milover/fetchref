@@ -38,7 +38,7 @@ func Fetch(dois []string) error {
 			if err != nil {
 				ch <- nil
 				e = true
-				log.Println("%v", err)
+				log.Printf("%v", err)
 			}
 			ch <- &a
 			sync <- true
@@ -49,26 +49,22 @@ func Fetch(dois []string) error {
 	}
 
 	for {
-		select {
-		case a, ok := <-ch:
-			if !ok {
-				if e {
-					return fmt.Errorf("error")
+		a, ok := <-ch
+		if !ok {
+			if e {
+				return fmt.Errorf("error")
+			}
+			return nil
+		}
+		if a != nil {
+			go func() {
+				if err := doDownloadRequest(*a); err != nil {
+					e = true
+					log.Printf("%v", err)
 				}
-				return nil
-			}
-			if a != nil {
-				go func() {
-					if err := doDownloadRequest(*a); err != nil {
-						e = true
-						log.Println("%v", err)
-					}
-				}()
-			}
+			}()
 		}
 	}
-
-	return nil
 }
 
 // sendGetRequest sends a GET request to 'Sci-Hub/DOI'.
@@ -109,7 +105,7 @@ func infoRequestFromMirror(
 			var e url.Error
 			if errors.Is(err, &e) {
 				if ue := err.(*url.Error); ue.Timeout() {
-					log.Println("connection timed out: %v", err)
+					log.Printf("connection timed out: %v", err)
 					continue
 				}
 			} else {
@@ -149,7 +145,7 @@ func doInfoRequest(a *article.Article) error {
 	a.Title = ses[0].data.String()
 	a.Url, err = url.Parse(ses[1].data.String())
 	if err != nil {
-		fmt.Errorf("%w", err)
+		return fmt.Errorf("%w", err)
 	}
 	a.Url.Scheme = "https"
 	if len(a.Url.Host) == 0 {
