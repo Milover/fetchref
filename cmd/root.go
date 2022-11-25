@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/Milover/fetchpaper/internal/fetch"
 	"github.com/spf13/cobra"
@@ -39,7 +38,7 @@ func init() {
 	rootCmd.PersistentFlags().DurationVar(
 		&fetch.GlobalReqTimeout,
 		"timeout",
-		3*time.Second,
+		fetch.GlobalReqTimeout,
 		"HTTP request timeout",
 	)
 
