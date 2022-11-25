@@ -1,6 +1,6 @@
 # Makefile
 
-TARGET		:= pressurized-cylinder	
+TARGET		:= fetchpaper
 
 build:
 	go build -o $(TARGET) main.go
