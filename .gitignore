@@ -17,3 +17,6 @@
 
 # Dependency directories
 vendor/
+
+# Main binary
+fetchpaper
