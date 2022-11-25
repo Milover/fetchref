@@ -63,10 +63,10 @@ func Fetch(dois []string) error {
 	for {
 		a, ok := <-ch
 		if !ok {
-			if e {
-				return fmt.Errorf("error")
-			}
 			wg.Wait()
+			if e {
+				return fmt.Errorf("errors occured")
+			}
 			return nil
 		}
 		if a != nil {
