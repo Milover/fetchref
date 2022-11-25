@@ -14,12 +14,14 @@ import (
 
 	"github.com/Milover/fetchpaper/internal/article"
 	"github.com/Milover/fetchpaper/internal/metainfo"
+	"go.uber.org/ratelimit"
 	"golang.org/x/net/html"
 )
 
 var (
 	// Global HTTP request timeout.
-	GlobalReqTimeout = 3 * time.Second
+	GlobalReqTimeout  = 3 * time.Second
+	GlobalRateLimiter = ratelimit.New(50)
 
 	// A list of Sci-Hub mirrors.
 	mirrors = []string{
@@ -38,17 +40,16 @@ func Fetch(dois []string) error {
 
 	ch := make(chan *article.Article, len(dois))
 	syn := make(chan bool, len(dois))
-	e := false
+	good := true
 
 	for _, d := range dois {
 		a := article.Article{Doi: d}
 		a.GeneratorFunc(article.SnakeCaseGenerator)
 
 		go func() {
-			err := doInfoRequest(&a)
-			if err != nil {
+			if err := doInfoRequest(&a); err != nil {
 				ch <- nil
-				e = true
+				good = false
 				log.Printf("%v: %v", a.Doi, err)
 			} else {
 				ch <- &a
@@ -65,7 +66,7 @@ func Fetch(dois []string) error {
 		a, ok := <-ch
 		if !ok {
 			wg.Wait()
-			if e {
+			if !good {
 				return fmt.Errorf("errors occured")
 			}
 			return nil
@@ -75,7 +76,7 @@ func Fetch(dois []string) error {
 			go func() {
 				defer wg.Done()
 				if err := doDownloadRequest(*a); err != nil {
-					e = true
+					good = false
 					log.Printf("%v: %v", a.Doi, err)
 				}
 			}()
@@ -93,6 +94,9 @@ func sendGetRequest(ctx context.Context, url string) (*http.Response, error) {
 		return nil, fmt.Errorf("%w", err)
 	}
 	req.Header.Set("User-Agent", metainfo.HTTPUserAgent)
+
+	// sendGetRequest can be called from multiple threads
+	GlobalRateLimiter.Take()
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
