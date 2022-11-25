@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"time"
 
@@ -18,9 +17,8 @@ var rootCmd = &cobra.Command{
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := fetch.Fetch(args); err != nil {
-			log.Fatalf("error: %v", err)
+			os.Exit(1)
 		}
-		fmt.Println("success")
 	},
 	DisableFlagsInUseLine: true,
 }
@@ -28,8 +26,8 @@ var rootCmd = &cobra.Command{
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
-	err := rootCmd.Execute()
-	if err != nil {
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
@@ -38,8 +36,6 @@ func init() {
 	// Here you will define your flags and configuration settings.
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
-
-	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.fetchpaper.yaml)")
 	rootCmd.PersistentFlags().DurationVar(
 		&fetch.GlobalReqTimeout,
 		"timeout",
