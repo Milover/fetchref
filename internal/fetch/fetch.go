@@ -158,6 +158,11 @@ func doInfoRequest(a *article.Article) error {
 	getFromHtml(body, ses)
 
 	a.Title = ses[0].data.String()
+	if len(a.Title) == 0 {
+		a.Title = a.Doi
+		log.Printf("%v: could not extract title", a.Doi)
+	}
+
 	a.Url, err = url.Parse(ses[1].data.String())
 	if err != nil {
 		return fmt.Errorf("%w", err)
