@@ -25,6 +25,10 @@ var mirrors = []string{
 // Fetch downloads articles from Sci-Hub from a list of supplied DOIs.
 func Fetch(dois []string) error {
 
+	if len(dois) == 0 {
+		return nil
+	}
+
 	ch := make(chan *article.Article, len(dois))
 	sync := make(chan bool, len(dois))
 	e := false
