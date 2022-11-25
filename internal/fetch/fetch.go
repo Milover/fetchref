@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Milover/fetchpaper/internal/article"
+	"github.com/Milover/fetchpaper/internal/metainfo"
 	"golang.org/x/net/html"
 )
 
@@ -91,6 +92,7 @@ func sendGetRequest(ctx context.Context, url string) (*http.Response, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w", err)
 	}
+	req.Header.Set("User-Agent", metainfo.HTTPUserAgent)
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
