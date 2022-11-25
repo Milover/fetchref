@@ -16,12 +16,17 @@ import (
 	"golang.org/x/net/html"
 )
 
-// A list of Sci-Hub mirrors.
-var mirrors = []string{
-	"sci-hub.se",
-	"sci-hub.st",
-	"sci-hub.ru",
-}
+var (
+	// Global HTTP request timeout.
+	GlobalReqTimeout = 3 * time.Second
+
+	// A list of Sci-Hub mirrors.
+	mirrors = []string{
+		"sci-hub.se",
+		"sci-hub.st",
+		"sci-hub.ru",
+	}
+)
 
 // Fetch downloads articles from Sci-Hub from a list of supplied DOIs.
 func Fetch(dois []string) error {
@@ -43,7 +48,7 @@ func Fetch(dois []string) error {
 			if err != nil {
 				ch <- nil
 				e = true
-				log.Printf("%v: %v", err, a.Doi)
+				log.Printf("%v: %v", a.Doi, err)
 			} else {
 				ch <- &a
 			}
@@ -70,7 +75,7 @@ func Fetch(dois []string) error {
 				defer wg.Done()
 				if err := doDownloadRequest(*a); err != nil {
 					e = true
-					log.Printf("%v: %v", err, a.Doi)
+					log.Printf("%v: %v", a.Doi, err)
 				}
 			}()
 		}
@@ -132,7 +137,7 @@ func infoRequestFromMirror(
 // doInfoRequest extracts the article title and URL from a HTML response.
 func doInfoRequest(a *article.Article) error {
 
-	ctx, cncl := context.WithTimeout(context.Background(), time.Second*3)
+	ctx, cncl := context.WithTimeout(context.Background(), GlobalReqTimeout)
 	defer cncl()
 
 	res, err := infoRequestFromMirror(ctx, *a)
@@ -174,7 +179,7 @@ func doDownloadRequest(a article.Article) error {
 	}
 	defer out.Close()
 
-	ctx, cncl := context.WithTimeout(context.Background(), time.Second*3)
+	ctx, cncl := context.WithTimeout(context.Background(), GlobalReqTimeout)
 	defer cncl()
 
 	res, err := sendGetRequest(ctx, a.Url.String())

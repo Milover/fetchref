@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/Milover/fetchpaper/internal/fetch"
 	"github.com/spf13/cobra"
@@ -14,8 +15,7 @@ var rootCmd = &cobra.Command{
 	Use:   "fetchpaper [options...] <DOI...>",
 	Short: "Fetch paper(s) from Sci-Hub from supplied DOI(s).",
 	Long:  `Fetch paper(s) from Sci-Hub from supplied DOI(s).`,
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
+	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := fetch.Fetch(args); err != nil {
 			log.Fatalf("error: %v", err)
@@ -40,6 +40,12 @@ func init() {
 	// will be global for your application.
 
 	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.fetchpaper.yaml)")
+	rootCmd.PersistentFlags().DurationVar(
+		&fetch.GlobalReqTimeout,
+		"timeout",
+		3*time.Second,
+		"HTTP request timeout",
+	)
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
