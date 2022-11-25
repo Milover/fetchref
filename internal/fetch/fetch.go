@@ -2,7 +2,6 @@ package fetch
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -109,44 +108,18 @@ func sendGetRequest(ctx context.Context, url string) (*http.Response, error) {
 	return res, nil
 }
 
-func infoRequestFromMirror(
-	ctx context.Context,
-	a article.Article,
-) (*http.Response, error) {
+// doInfoRequestFromMirror requests article info from a Sci-Hub mirror
+// and parses the article title and download URL from the response HTML.
+func doInfoRequestFromMirror(a *article.Article, mirror string) error {
 	u := &url.URL{
 		Scheme: "https",
+		Host:   mirror,
 		Path:   a.Doi,
 	}
-
-	for _, m := range mirrors {
-		u.Host = m
-
-		res, err := sendGetRequest(ctx, u.String())
-		if err != nil {
-			var e url.Error
-			if errors.Is(err, &e) {
-				if ue := err.(*url.Error); ue.Timeout() {
-					log.Printf("connection timed out: %v", err)
-					continue
-				}
-			} else {
-				return res, fmt.Errorf("%w", err)
-			}
-		}
-
-		return res, err
-	}
-
-	panic("never reached")
-}
-
-// doInfoRequest extracts the article title and URL from a HTML response.
-func doInfoRequest(a *article.Article) error {
-
 	ctx, cncl := context.WithTimeout(context.Background(), GlobalReqTimeout)
 	defer cncl()
 
-	res, err := infoRequestFromMirror(ctx, *a)
+	res, err := sendGetRequest(ctx, u.String())
 	if err != nil {
 		return fmt.Errorf("%w", err)
 	}
@@ -157,12 +130,14 @@ func doInfoRequest(a *article.Article) error {
 	}
 	defer res.Body.Close()
 
+	// extract title and url from parsed HTML
 	ses := []htmlSelectorExtractor{
 		newHse(selectTitleNode, extractTitle),
 		newHse(selectUrlNode, extractUrl),
 	}
 	getFromHtml(body, ses)
 
+	// set and check title/body, clean up if necessary
 	a.Title = ses[0].data.String()
 	if len(a.Title) == 0 {
 		a.Title = a.Doi
@@ -176,6 +151,25 @@ func doInfoRequest(a *article.Article) error {
 	a.Url.Scheme = "https"
 	if len(a.Url.Host) == 0 {
 		a.Url.Host = res.Request.URL.Host
+	}
+
+	return nil
+}
+
+// doInfoRequest requests article info from Sci-Hub, and updates the article
+// if successfull. On a failed request, another Sci-Hub mirror is chosen,
+// until all mirrors have been exhausted.
+func doInfoRequest(a *article.Article) error {
+	for i, m := range mirrors {
+		if err := doInfoRequestFromMirror(a, m); err != nil {
+			log.Printf("%v: %v", a.Doi, err)
+			// fail if there are no more mirrors to try
+			if i == len(mirrors)-1 {
+				return fmt.Errorf("could not get article info")
+			}
+		} else {
+			break
+		}
 	}
 
 	return nil
