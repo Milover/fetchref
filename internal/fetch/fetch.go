@@ -43,7 +43,7 @@ func Fetch(dois []string) error {
 			if err != nil {
 				ch <- nil
 				e = true
-				log.Printf("%v", err)
+				log.Printf("%v: %v", err, a.Doi)
 			} else {
 				ch <- &a
 			}
@@ -70,7 +70,7 @@ func Fetch(dois []string) error {
 				defer wg.Done()
 				if err := doDownloadRequest(*a); err != nil {
 					e = true
-					log.Printf("%v", err)
+					log.Printf("%v: %v", err, a.Doi)
 				}
 			}()
 		}
@@ -179,11 +179,13 @@ func doDownloadRequest(a article.Article) error {
 
 	res, err := sendGetRequest(ctx, a.Url.String())
 	if err != nil {
+		os.Remove(out.Name())
 		return fmt.Errorf("%w", err)
 	}
 	defer res.Body.Close()
 
 	if _, err := io.Copy(out, res.Body); err != nil {
+		os.Remove(out.Name())
 		return fmt.Errorf("%w", err)
 	}
 
