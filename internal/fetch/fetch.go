@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/Milover/fetchpaper/internal/article"
@@ -30,7 +31,7 @@ func Fetch(dois []string) error {
 	}
 
 	ch := make(chan *article.Article, len(dois))
-	sync := make(chan bool, len(dois))
+	syn := make(chan bool, len(dois))
 	e := false
 
 	for _, d := range dois {
@@ -43,25 +44,30 @@ func Fetch(dois []string) error {
 				ch <- nil
 				e = true
 				log.Printf("%v", err)
+			} else {
+				ch <- &a
 			}
-			ch <- &a
-			sync <- true
-			if len(sync) == len(dois) {
+			syn <- true
+			if len(syn) == len(dois) {
 				close(ch)
 			}
 		}()
 	}
 
+	var wg sync.WaitGroup
 	for {
 		a, ok := <-ch
 		if !ok {
 			if e {
 				return fmt.Errorf("error")
 			}
+			wg.Wait()
 			return nil
 		}
 		if a != nil {
+			wg.Add(1)
 			go func() {
+				defer wg.Done()
 				if err := doDownloadRequest(*a); err != nil {
 					e = true
 					log.Printf("%v", err)
