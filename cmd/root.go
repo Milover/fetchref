@@ -5,15 +5,17 @@ import (
 	"os"
 
 	"github.com/Milover/fetchpaper/internal/fetch"
+	"github.com/Milover/fetchpaper/internal/metainfo"
 	"github.com/spf13/cobra"
 )
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "fetchpaper [options...] <DOI...>",
-	Short: "Fetch paper(s) from Sci-Hub from supplied DOI(s).",
-	Long:  `Fetch paper(s) from Sci-Hub from supplied DOI(s).`,
-	Args:  cobra.MinimumNArgs(1),
+	Use:     "fetchpaper [options...] <DOI...>",
+	Short:   "Fetch paper(s) from Sci-Hub from supplied DOI(s).",
+	Long:    `Fetch paper(s) from Sci-Hub from supplied DOI(s).`,
+	Version: metainfo.Version,
+	Args:    cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := fetch.Fetch(args); err != nil {
 			os.Exit(1)
