@@ -2,6 +2,7 @@ package fetch
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -12,14 +13,17 @@ import (
 	"time"
 
 	"github.com/Milover/fetchpaper/internal/article"
+	"github.com/Milover/fetchpaper/internal/crossref"
 	"github.com/Milover/fetchpaper/internal/metainfo"
 	"go.uber.org/ratelimit"
 	"golang.org/x/net/html"
 )
 
 var (
-	// Global HTTP request timeout.
-	GlobalReqTimeout  = 3 * time.Second
+	// GlobalReqTimeout is the global HTTP request timeout.
+	GlobalReqTimeout = 3 * time.Second
+
+	// GlobalRateLimiter is the global outgoing HTTP request limiter.
 	GlobalRateLimiter = ratelimit.New(50)
 
 	// A list of Sci-Hub mirrors.
@@ -45,6 +49,7 @@ func Fetch(dois []string) error {
 		a := article.Article{Doi: d}
 		a.GeneratorFunc(article.SnakeCaseGenerator)
 
+		// GET info from Sci-Hub
 		go func() {
 			if err := doInfoRequest(&a); err != nil {
 				ch <- nil
@@ -58,6 +63,13 @@ func Fetch(dois []string) error {
 				close(ch)
 			}
 		}()
+
+		// GET metadata from Crossref
+		go func() {
+			if err := doCrossrefRequest(&a); err != nil {
+				log.Printf("%v: %v", a.Doi, err)
+			}
+		}()
 	}
 
 	var wg sync.WaitGroup
@@ -66,7 +78,7 @@ func Fetch(dois []string) error {
 		if !ok {
 			wg.Wait()
 			if !good {
-				return fmt.Errorf("errors occured")
+				return fmt.Errorf("errors occurred")
 			}
 			return nil
 		}
@@ -133,9 +145,9 @@ func doInfoRequestFromMirror(a *article.Article, mirror string) error {
 	// extract title and url from parsed HTML
 	ses := []htmlSelectorExtractor{
 		newHse(selectTitleNode, extractTitle),
-		newHse(selectUrlNode, extractUrl),
+		newHse(selectURLNode, extractURL),
 	}
-	getFromHtml(body, ses)
+	getFromHTML(body, ses)
 
 	// set and check title/body, clean up if necessary
 	a.Title = ses[0].data.String()
@@ -157,7 +169,7 @@ func doInfoRequestFromMirror(a *article.Article, mirror string) error {
 }
 
 // doInfoRequest requests article info from Sci-Hub, and updates the article
-// if successfull. On a failed request, another Sci-Hub mirror is chosen,
+// if successful. On a failed request, another Sci-Hub mirror is chosen,
 // until all mirrors have been exhausted.
 func doInfoRequest(a *article.Article) error {
 	for i, m := range mirrors {
@@ -178,24 +190,61 @@ func doInfoRequest(a *article.Article) error {
 // downloadArticle downloads the article and writes a PDF to disc. The download
 // URL and the file name are retrieved from the Article.
 func doDownloadRequest(a article.Article) error {
+	ctx, cncl := context.WithTimeout(context.Background(), GlobalReqTimeout)
+	defer cncl()
+
+	res, err := sendGetRequest(ctx, a.Url.String())
+	if err != nil {
+		return fmt.Errorf("%w", err)
+	}
+	defer res.Body.Close()
+
 	out, err := os.Create(a.GenerateFileName() + ".pdf")
 	if err != nil {
 		panic(err)
 	}
 	defer out.Close()
 
+	if _, err := io.Copy(out, res.Body); err != nil {
+		os.Remove(out.Name())
+		return fmt.Errorf("%w", err)
+	}
+
+	return nil
+}
+
+// doCrossrefRequest requests article metadata from Crossref's API.
+func doCrossrefRequest(a *article.Article) error {
+	u := &url.URL{
+		Scheme: "https",
+		Host:   crossref.API,
+		Path:   crossref.Works,
+	}
+	u = u.JoinPath(url.PathEscape(a.Doi))
+
 	ctx, cncl := context.WithTimeout(context.Background(), GlobalReqTimeout)
 	defer cncl()
 
-	res, err := sendGetRequest(ctx, a.Url.String())
+	res, err := sendGetRequest(ctx, u.String())
 	if err != nil {
-		os.Remove(out.Name())
 		return fmt.Errorf("%w", err)
 	}
 	defer res.Body.Close()
 
-	if _, err := io.Copy(out, res.Body); err != nil {
-		os.Remove(out.Name())
+	var msg crossref.WorkMessage
+	if err := json.NewDecoder(res.Body).Decode(&msg); err != nil {
+		return fmt.Errorf("%w", err)
+	}
+
+	// write to disc
+	out, err := os.Create(a.GenerateFileName() + ".json")
+	if err != nil {
+		panic(err)
+	}
+	defer out.Close()
+
+	if err := json.NewEncoder(out).Encode(&msg); err != nil {
+		//os.Remove(out.Name())
 		return fmt.Errorf("%w", err)
 	}
 

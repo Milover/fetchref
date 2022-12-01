@@ -27,18 +27,18 @@ func newHse(
 	}
 }
 
-// getFromHtmlData walks an HTML tree and extracts data.
+// getFromHTML walks an HTML tree and extracts data.
 // If the current node in the HTML tree is selected by the 'selector', then
 // data is extracted from the node by the 'exctractor', otherwise another node
 // is selected. Both children and sibling nodes are walked.
-func getFromHtml(n *html.Node, es []htmlSelectorExtractor) {
+func getFromHTML(n *html.Node, es []htmlSelectorExtractor) {
 	for _, e := range es {
 		if e.selector(n) {
 			e.data.WriteString(e.extractor(n))
 		}
 	}
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		getFromHtml(c, es)
+		getFromHTML(c, es)
 	}
 }
 
@@ -48,7 +48,7 @@ func selectTitleNode(n *html.Node) bool {
 }
 
 // selectTitleNode selects the HTML node containing the article (download) URL.
-func selectUrlNode(n *html.Node) bool {
+func selectURLNode(n *html.Node) bool {
 	return n.Type == html.ElementNode && n.Data == "button"
 }
 
@@ -70,7 +70,7 @@ func extractTitle(n *html.Node) string {
 }
 
 // extractUrl extracts the article (download) URL from a HTML body.
-func extractUrl(n *html.Node) string {
+func extractURL(n *html.Node) string {
 	for _, atr := range n.Attr {
 		if atr.Key == "onclick" {
 			re := regexp.MustCompile(`location.href='(.*)'`)
