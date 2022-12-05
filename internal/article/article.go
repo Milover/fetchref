@@ -4,6 +4,8 @@ import (
 	"net/url"
 	"strings"
 	"unicode"
+
+	"github.com/nickng/bibtex"
 )
 
 // The Article holds data needed to download and write the article to disc.
@@ -11,7 +13,8 @@ import (
 type Article struct {
 	Doi   string
 	Title string
-	Url   *url.URL
+	Url   *url.URL // PDF download link
+	Bib   *bibtex.BibTex
 
 	// fileNameGenerator generates a file name for the article
 	fileNameGenerator func(Article) string

@@ -3,6 +3,7 @@ module github.com/Milover/fetchpaper
 go 1.18
 
 require (
+	github.com/nickng/bibtex v1.2.0
 	github.com/spf13/cobra v1.5.0
 	go.uber.org/ratelimit v0.2.0
 	golang.org/x/net v0.0.0-20220708220712-1185a9018129

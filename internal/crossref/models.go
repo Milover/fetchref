@@ -17,18 +17,32 @@ const (
 	API string = "api.crossref.org"
 )
 
-// Endpoint is a type alias for the endpoint string.
-type Endpoint = string
-
 // Crossref's REST API endpoints.
 const (
-	Funders  Endpoint = "funders"
-	Journals Endpoint = "journals"
-	Licences Endpoint = "licenses"
-	Members  Endpoint = "members"
-	Prefixes Endpoint = "prefixes"
-	Types    Endpoint = "types"
-	Works    Endpoint = "works"
+	Funders  string = "funders"
+	Journals string = "journals"
+	Licences string = "licenses"
+	Members  string = "members"
+	Prefixes string = "prefixes"
+	Types    string = "types"
+	Works    string = "works"
+)
+
+// Endpoints for Crossref's supported citation content types.
+// These are appended to the '/works/{doi}' endpoint, which then returns the
+// citation formatted in the requested type.
+//
+// For more information see: https://citation.crosscite.org/docs.html
+const (
+	BibTeX        string = "transform/application/x-bibtex"
+	CiteprocJSON  string = "transform/application/vnd.citationstyles.csl+json"
+	RDFXML        string = "transform/application/rdf+xml"
+	RDFTurtle     string = "transform/text/turtle"
+	RIS           string = "transform/application/x-research-info-systems"
+	SchemaorgJSON string = "transform/application/vnd.schemaorg.ld+json"
+	TextCitation  string = "transform/text/x-bibliography"
+	UnixrefXML    string = "transform/application/vnd.crossref.unixref+xml"
+	UnixsdXML     string = "transform/application/vnd.crossref.unixsd+xml"
 )
 
 // Affiliation holds the name of an affiliated institution.

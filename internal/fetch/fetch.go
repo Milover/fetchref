@@ -1,8 +1,8 @@
 package fetch
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -15,6 +15,7 @@ import (
 	"github.com/Milover/fetchpaper/internal/article"
 	"github.com/Milover/fetchpaper/internal/crossref"
 	"github.com/Milover/fetchpaper/internal/metainfo"
+	"github.com/nickng/bibtex"
 	"go.uber.org/ratelimit"
 	"golang.org/x/net/html"
 )
@@ -36,7 +37,6 @@ var (
 
 // Fetch downloads articles from Sci-Hub from a list of supplied DOIs.
 func Fetch(dois []string) error {
-
 	if len(dois) == 0 {
 		return nil
 	}
@@ -44,6 +44,7 @@ func Fetch(dois []string) error {
 	ch := make(chan *article.Article, len(dois))
 	syn := make(chan bool, len(dois))
 	good := true
+	var wg sync.WaitGroup
 
 	for _, d := range dois {
 		a := article.Article{Doi: d}
@@ -64,15 +65,16 @@ func Fetch(dois []string) error {
 			}
 		}()
 
-		// GET metadata from Crossref
+		// GET citation from Crossref
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			if err := doCrossrefRequest(&a); err != nil {
 				log.Printf("%v: %v", a.Doi, err)
 			}
 		}()
 	}
 
-	var wg sync.WaitGroup
 	for {
 		a, ok := <-ch
 		if !ok {
@@ -99,7 +101,6 @@ func Fetch(dois []string) error {
 // The request is sent to a different Sci-Hub mirror if the request times out.
 // An error is returned if a valid response cannot be obtained.
 func sendGetRequest(ctx context.Context, url string) (*http.Response, error) {
-
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%w", err)
@@ -220,7 +221,7 @@ func doCrossrefRequest(a *article.Article) error {
 		Host:   crossref.API,
 		Path:   crossref.Works,
 	}
-	u = u.JoinPath(url.PathEscape(a.Doi))
+	u = u.JoinPath(url.PathEscape(a.Doi), crossref.BibTeX)
 
 	ctx, cncl := context.WithTimeout(context.Background(), GlobalReqTimeout)
 	defer cncl()
@@ -231,20 +232,14 @@ func doCrossrefRequest(a *article.Article) error {
 	}
 	defer res.Body.Close()
 
-	var msg crossref.WorkMessage
-	if err := json.NewDecoder(res.Body).Decode(&msg); err != nil {
+	// is this necessary?
+	var b bytes.Buffer
+	if _, err := b.ReadFrom(res.Body); err != nil {
 		return fmt.Errorf("%w", err)
 	}
 
-	// write to disc
-	out, err := os.Create(a.GenerateFileName() + ".json")
-	if err != nil {
-		panic(err)
-	}
-	defer out.Close()
-
-	if err := json.NewEncoder(out).Encode(&msg); err != nil {
-		//os.Remove(out.Name())
+	// store the citation
+	if a.Bib, err = bibtex.Parse(&b); err != nil {
 		return fmt.Errorf("%w", err)
 	}
 
