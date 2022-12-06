@@ -43,6 +43,13 @@ func init() {
 		fetch.GlobalReqTimeout,
 		"HTTP request timeout",
 	)
+	rootCmd.PersistentFlags().StringVarP(
+		&fetch.CitationFileName,
+		"citation-filename",
+		"o",
+		fetch.CitationFileName,
+		"citation output file name, w/o extension",
+	)
 	rootCmd.PersistentFlags().Var(
 		&fetch.CitationFormat,
 		"citation-format",

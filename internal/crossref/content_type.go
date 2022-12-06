@@ -34,7 +34,7 @@ func (c ContentType) FileExtension() string {
 }
 
 // IsValid checks if the content type value is valid.
-func (c ContentType) Valid() error {
+func (c ContentType) IsValid() error {
 	if (int(c) < 0) || (int(c) >= len(names)) {
 		return fmt.Errorf("invalid content type")
 	}

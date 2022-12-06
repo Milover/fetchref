@@ -29,6 +29,9 @@ var (
 	// CitationFormat is the citation output format.
 	CitationFormat = crossref.BibTeX
 
+	// CitationFileName is the citation filename base (w/o extension).
+	CitationFileName = "citations"
+
 	// A list of Sci-Hub mirrors.
 	mirrors = []string{
 		"sci-hub.se",
@@ -43,32 +46,34 @@ func Fetch(dois []string) error {
 		return nil
 	}
 
+	articles := make([]article.Article, len(dois))
+
 	ch := make(chan *article.Article, len(dois))
 	g := new(errgroup.Group)
 	var wg sync.WaitGroup
 	wg.Add(len(dois))
 
-	for _, d := range dois {
-		a := article.Article{Doi: d}
+	for i, d := range dois {
+		articles[i] = article.Article{Doi: d}
+		a := &articles[i]
 		a.GeneratorFunc(article.SnakeCaseGenerator)
 
 		// GET info from Sci-Hub
 		g.Go(func() error {
 			defer wg.Done()
-			if err := doInfoRequest(&a); err != nil {
+			if err := doInfoRequest(a); err != nil {
 				log.Printf("%v: %v", a.Doi, err)
 				return err
 			}
-			ch <- &a
+			ch <- a
 			return nil
 		})
 
 		// GET citation from Crossref
-		// WARNING: the public pool is often more responsive than the polite one
-		// WARNING: doCrossrefRequest should take from 'ch' even though it's
-		// not necessary as per the current implementation.
+		// WARNING: doCrossrefRequest should take from 'a channel' even though
+		// it's not necessary as per the current implementation.
 		g.Go(func() error {
-			if err := doCrossrefCitationRequest(&a, CitationFormat); err != nil {
+			if err := doCrossrefCitationRequest(a); err != nil {
 				log.Printf("%v: %v", a.Doi, err)
 				return err
 			}
@@ -92,8 +97,31 @@ func Fetch(dois []string) error {
 		close(ch)
 	}()
 
-	if err := g.Wait(); err != nil {
+	errg := g.Wait()
+	errw := writeCitations(articles)
+	if (errg != nil) || (errw != nil) {
 		return fmt.Errorf("errors occurred")
+	}
+	return nil
+}
+
+// writeCitations writes all citations to a file.
+func writeCitations(articles []article.Article) error {
+	out, err := os.Create(CitationFileName + CitationFormat.FileExtension())
+	if err != nil {
+		panic(err)
+	}
+	defer out.Close()
+	for _, a := range articles {
+		if len(a.Citation) == 0 {
+			continue
+		}
+		if a.Citation[len(a.Citation)-1] != '\n' {
+			a.Citation = append(a.Citation, '\n')
+		}
+		if _, err := out.Write(a.Citation); err != nil {
+			return fmt.Errorf("%w", err)
+		}
 	}
 	return nil
 }
@@ -216,20 +244,13 @@ func doDownloadRequest(a *article.Article) error {
 }
 
 // doCrossrefCitationRequest requests the article citation
-func doCrossrefCitationRequest(
-	a *article.Article,
-	c crossref.ContentType,
-) error {
-	if err := c.IsValid(); err != nil {
-		return fmt.Errorf("%w", err)
-	}
-
+func doCrossrefCitationRequest(a *article.Article) error {
 	u := &url.URL{
 		Scheme: "https",
 		Host:   crossref.API,
 		Path:   crossref.Works,
 	}
-	u = u.JoinPath(url.PathEscape(a.Doi), c.Endpoint())
+	u = u.JoinPath(url.PathEscape(a.Doi), CitationFormat.Endpoint())
 
 	ctx, cncl := context.WithTimeout(context.Background(), GlobalReqTimeout)
 	defer cncl()
