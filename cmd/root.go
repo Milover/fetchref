@@ -43,6 +43,11 @@ func init() {
 		fetch.GlobalReqTimeout,
 		"HTTP request timeout",
 	)
+	rootCmd.PersistentFlags().Var(
+		&fetch.CitationFormat,
+		"citation-format",
+		"article citation output format",
+	)
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.

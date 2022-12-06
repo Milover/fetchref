@@ -26,6 +26,9 @@ var (
 	// GlobalRateLimiter is the global outgoing HTTP request limiter.
 	GlobalRateLimiter = ratelimit.New(50)
 
+	// CitationFormat is the citation output format.
+	CitationFormat = crossref.BibTeX
+
 	// A list of Sci-Hub mirrors.
 	mirrors = []string{
 		"sci-hub.se",
@@ -65,7 +68,7 @@ func Fetch(dois []string) error {
 		// WARNING: doCrossrefRequest should take from 'ch' even though it's
 		// not necessary as per the current implementation.
 		g.Go(func() error {
-			if err := doCrossrefRequest(&a); err != nil {
+			if err := doCrossrefCitationRequest(&a, CitationFormat); err != nil {
 				log.Printf("%v: %v", a.Doi, err)
 				return err
 			}
@@ -134,12 +137,12 @@ func doInfoRequestFromMirror(a *article.Article, mirror string) error {
 	if err != nil {
 		return fmt.Errorf("%w", err)
 	}
+	defer res.Body.Close()
 
 	body, err := html.Parse(res.Body)
 	if err != nil {
 		return fmt.Errorf("%w", err)
 	}
-	defer res.Body.Close()
 
 	// extract title and url from parsed HTML
 	ses := []htmlSelectorExtractor{
@@ -212,14 +215,21 @@ func doDownloadRequest(a *article.Article) error {
 	return nil
 }
 
-// doCrossrefRequest requests article metadata from Crossref's API.
-func doCrossrefRequest(a *article.Article) error {
+// doCrossrefCitationRequest requests the article citation
+func doCrossrefCitationRequest(
+	a *article.Article,
+	c crossref.ContentType,
+) error {
+	if err := c.IsValid(); err != nil {
+		return fmt.Errorf("%w", err)
+	}
+
 	u := &url.URL{
 		Scheme: "https",
 		Host:   crossref.API,
 		Path:   crossref.Works,
 	}
-	u = u.JoinPath(url.PathEscape(a.Doi), crossref.BibTeX)
+	u = u.JoinPath(url.PathEscape(a.Doi), c.Endpoint())
 
 	ctx, cncl := context.WithTimeout(context.Background(), GlobalReqTimeout)
 	defer cncl()

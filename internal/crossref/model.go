@@ -28,23 +28,6 @@ const (
 	Works    string = "works"
 )
 
-// Endpoints for Crossref's supported citation content types.
-// These are appended to the '/works/{doi}' endpoint, which then returns the
-// citation formatted in the requested type.
-//
-// For more information see: https://citation.crosscite.org/docs.html
-const (
-	BibTeX        string = "transform/application/x-bibtex"
-	CiteprocJSON  string = "transform/application/vnd.citationstyles.csl+json"
-	RDFXML        string = "transform/application/rdf+xml"
-	RDFTurtle     string = "transform/text/turtle"
-	RIS           string = "transform/application/x-research-info-systems"
-	SchemaorgJSON string = "transform/application/vnd.schemaorg.ld+json"
-	TextCitation  string = "transform/text/x-bibliography"
-	UnixrefXML    string = "transform/application/vnd.crossref.unixref+xml"
-	UnixsdXML     string = "transform/application/vnd.crossref.unixsd+xml"
-)
-
 // Affiliation holds the name of an affiliated institution.
 type Affiliation struct {
 	Name string `json:"name"`
