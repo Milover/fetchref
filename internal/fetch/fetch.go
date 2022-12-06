@@ -1,7 +1,6 @@
 package fetch
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -15,9 +14,9 @@ import (
 	"github.com/Milover/fetchpaper/internal/article"
 	"github.com/Milover/fetchpaper/internal/crossref"
 	"github.com/Milover/fetchpaper/internal/metainfo"
-	"github.com/nickng/bibtex"
 	"go.uber.org/ratelimit"
 	"golang.org/x/net/html"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -42,63 +41,61 @@ func Fetch(dois []string) error {
 	}
 
 	ch := make(chan *article.Article, len(dois))
-	syn := make(chan bool, len(dois))
-	good := true
+	g := new(errgroup.Group)
 	var wg sync.WaitGroup
+	wg.Add(len(dois))
 
 	for _, d := range dois {
 		a := article.Article{Doi: d}
 		a.GeneratorFunc(article.SnakeCaseGenerator)
 
 		// GET info from Sci-Hub
-		go func() {
+		g.Go(func() error {
+			defer wg.Done()
 			if err := doInfoRequest(&a); err != nil {
-				ch <- nil
-				good = false
 				log.Printf("%v: %v", a.Doi, err)
-			} else {
-				ch <- &a
+				return err
 			}
-			syn <- true
-			if len(syn) == len(dois) {
-				close(ch)
-			}
-		}()
+			ch <- &a
+			return nil
+		})
 
 		// GET citation from Crossref
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		// WARNING: the public pool is often more responsive than the polite one
+		// WARNING: doCrossrefRequest should take from 'ch' even though it's
+		// not necessary as per the current implementation.
+		g.Go(func() error {
 			if err := doCrossrefRequest(&a); err != nil {
 				log.Printf("%v: %v", a.Doi, err)
-			}
-		}()
-	}
-
-	for {
-		a, ok := <-ch
-		if !ok {
-			wg.Wait()
-			if !good {
-				return fmt.Errorf("errors occurred")
+				return err
 			}
 			return nil
-		}
-		if a != nil {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				if err := doDownloadRequest(*a); err != nil {
-					good = false
+		})
+
+		// GET article PDF
+		g.Go(func() error {
+			if a, ok := <-ch; ok {
+				if err := doDownloadRequest(a); err != nil {
 					log.Printf("%v: %v", a.Doi, err)
+					return err
 				}
-			}()
-		}
+			}
+			return nil
+		})
 	}
+
+	go func() {
+		wg.Wait()
+		close(ch)
+	}()
+
+	if err := g.Wait(); err != nil {
+		return fmt.Errorf("errors occurred")
+	}
+	return nil
 }
 
-// sendGetRequest sends a GET request to 'Sci-Hub/DOI'.
-// The request is sent to a different Sci-Hub mirror if the request times out.
+// sendGetRequest sends a GET request to the specified URL.
 // An error is returned if a valid response cannot be obtained.
 func sendGetRequest(ctx context.Context, url string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -129,6 +126,7 @@ func doInfoRequestFromMirror(a *article.Article, mirror string) error {
 		Host:   mirror,
 		Path:   a.Doi,
 	}
+
 	ctx, cncl := context.WithTimeout(context.Background(), GlobalReqTimeout)
 	defer cncl()
 
@@ -190,7 +188,7 @@ func doInfoRequest(a *article.Article) error {
 
 // downloadArticle downloads the article and writes a PDF to disc. The download
 // URL and the file name are retrieved from the Article.
-func doDownloadRequest(a article.Article) error {
+func doDownloadRequest(a *article.Article) error {
 	ctx, cncl := context.WithTimeout(context.Background(), GlobalReqTimeout)
 	defer cncl()
 
@@ -232,14 +230,7 @@ func doCrossrefRequest(a *article.Article) error {
 	}
 	defer res.Body.Close()
 
-	// is this necessary?
-	var b bytes.Buffer
-	if _, err := b.ReadFrom(res.Body); err != nil {
-		return fmt.Errorf("%w", err)
-	}
-
-	// store the citation
-	if a.Bib, err = bibtex.Parse(&b); err != nil {
+	if a.Citation, err = io.ReadAll(res.Body); err != nil {
 		return fmt.Errorf("%w", err)
 	}
 

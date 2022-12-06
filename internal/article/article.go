@@ -4,17 +4,15 @@ import (
 	"net/url"
 	"strings"
 	"unicode"
-
-	"github.com/nickng/bibtex"
 )
 
 // The Article holds data needed to download and write the article to disc.
 // The DOI is used to fetch the title and PDF URL from Sci-Hub.
 type Article struct {
-	Doi   string
-	Title string
-	Url   *url.URL // PDF download link
-	Bib   *bibtex.BibTex
+	Doi      string
+	Title    string
+	Url      *url.URL // PDF download link
+	Citation []byte
 
 	// fileNameGenerator generates a file name for the article
 	fileNameGenerator func(Article) string
