@@ -42,31 +42,9 @@ func getFromHTML(n *html.Node, es []htmlSelectorExtractor) {
 	}
 }
 
-// selectTitleNode selects the HTML node containing the article title.
-func selectTitleNode(n *html.Node) bool {
-	return n.Type == html.ElementNode && n.Data == "i"
-}
-
 // selectTitleNode selects the HTML node containing the article (download) URL.
 func selectURLNode(n *html.Node) bool {
 	return n.Type == html.ElementNode && n.Data == "button"
-}
-
-// extractTitle extracts the article title from a HTML body.
-func extractTitle(n *html.Node) string {
-	var b strings.Builder
-	bufSize := 150 // educated guess
-
-	b.Grow(bufSize)
-	b.WriteString(n.FirstChild.Data)
-	ss := strings.SplitAfterN(b.String(), ".", -1)
-
-	b.Reset()
-	b.Grow(bufSize)
-	for i := 0; i < len(ss)-2; i++ {
-		b.WriteString(ss[i])
-	}
-	return strings.TrimSuffix(b.String(), ".")
 }
 
 // extractUrl extracts the article (download) URL from a HTML body.

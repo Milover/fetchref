@@ -2,6 +2,7 @@ package fetch
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -58,22 +59,46 @@ func Fetch(dois []string) error {
 		a := &articles[i]
 		a.GeneratorFunc(article.SnakeCaseGenerator)
 
-		// GET info from Sci-Hub
+		// GET article info
 		g.Go(func() error {
 			defer wg.Done()
-			if err := doInfoRequest(a); err != nil {
-				log.Printf("%v: %v", a.Doi, err)
-				return err
-			}
+			eg := new(errgroup.Group)
+
+			// GET PDF download link from Sci-Hub
+			eg.Go(func() error {
+				if err := reqSciHubInfo(a); err != nil {
+					log.Printf("%v: %v", a.Doi, err)
+					return err
+				}
+				return nil
+			})
+			// GET metadata from Crossref, and set the article title
+			eg.Go(func() error {
+				meta, err := reqCrossrefMeta(a)
+				if err != nil {
+					log.Printf("%v: %v", a.Doi, err)
+					return err
+				}
+				// WARNING: is it ok to assume that the first item is the one we want?
+				a.Title = meta.Message.Title[0]
+				if len(a.Title) == 0 {
+					a.Title = a.Doi
+					log.Printf("%v: could not extract title", a.Doi)
+					return fmt.Errorf("%v: could not extract title", a.Doi)
+				}
+				return nil
+			})
+
+			err := eg.Wait()
 			ch <- a
-			return nil
+			return err
 		})
 
 		// GET citation from Crossref
 		// WARNING: doCrossrefRequest should take from 'a channel' even though
 		// it's not necessary as per the current implementation.
 		g.Go(func() error {
-			if err := doCrossrefCitationRequest(a); err != nil {
+			if err := reqCrossrefCitation(a); err != nil {
 				log.Printf("%v: %v", a.Doi, err)
 				return err
 			}
@@ -83,7 +108,7 @@ func Fetch(dois []string) error {
 		// GET article PDF
 		g.Go(func() error {
 			if a, ok := <-ch; ok {
-				if err := doDownloadRequest(a); err != nil {
+				if err := reqDownload(a); err != nil {
 					log.Printf("%v: %v", a.Doi, err)
 					return err
 				}
@@ -145,13 +170,14 @@ func sendGetRequest(ctx context.Context, url string) (*http.Response, error) {
 	if res.StatusCode > 399 {
 		return res, fmt.Errorf("%s", res.Status)
 	}
+	//fmt.Println(res.Header.Get("x-api-pool"))
 
 	return res, nil
 }
 
-// doInfoRequestFromMirror requests article info from a Sci-Hub mirror
+// reqSciHubMirrorInfo requests article info from a Sci-Hub mirror
 // and parses the article title and download URL from the response HTML.
-func doInfoRequestFromMirror(a *article.Article, mirror string) error {
+func reqSciHubMirrorInfo(a *article.Article, mirror string) error {
 	u := &url.URL{
 		Scheme: "https",
 		Host:   mirror,
@@ -173,20 +199,17 @@ func doInfoRequestFromMirror(a *article.Article, mirror string) error {
 	}
 
 	// extract title and url from parsed HTML
-	ses := []htmlSelectorExtractor{
-		newHse(selectTitleNode, extractTitle),
-		newHse(selectURLNode, extractURL),
-	}
+	ses := []htmlSelectorExtractor{newHse(selectURLNode, extractURL)}
 	getFromHTML(body, ses)
 
 	// set and check title/body, clean up if necessary
-	a.Title = ses[0].data.String()
-	if len(a.Title) == 0 {
-		a.Title = a.Doi
-		log.Printf("%v: could not extract title", a.Doi)
-	}
+	//	a.Title = ses[0].data.String()
+	//	if len(a.Title) == 0 {
+	//		a.Title = a.Doi
+	//		log.Printf("%v: could not extract title", a.Doi)
+	//	}
 
-	a.Url, err = url.Parse(ses[1].data.String())
+	a.Url, err = url.Parse(ses[0].data.String())
 	if err != nil {
 		return fmt.Errorf("%w", err)
 	}
@@ -198,12 +221,12 @@ func doInfoRequestFromMirror(a *article.Article, mirror string) error {
 	return nil
 }
 
-// doInfoRequest requests article info from Sci-Hub, and updates the article
+// reqSciHubInfo requests article info from Sci-Hub, and updates the article
 // if successful. On a failed request, another Sci-Hub mirror is chosen,
 // until all mirrors have been exhausted.
-func doInfoRequest(a *article.Article) error {
+func reqSciHubInfo(a *article.Article) error {
 	for i, m := range mirrors {
-		if err := doInfoRequestFromMirror(a, m); err != nil {
+		if err := reqSciHubMirrorInfo(a, m); err != nil {
 			log.Printf("%v: %v", a.Doi, err)
 			// fail if there are no more mirrors to try
 			if i == len(mirrors)-1 {
@@ -219,7 +242,7 @@ func doInfoRequest(a *article.Article) error {
 
 // downloadArticle downloads the article and writes a PDF to disc. The download
 // URL and the file name are retrieved from the Article.
-func doDownloadRequest(a *article.Article) error {
+func reqDownload(a *article.Article) error {
 	ctx, cncl := context.WithTimeout(context.Background(), GlobalReqTimeout)
 	defer cncl()
 
@@ -243,8 +266,8 @@ func doDownloadRequest(a *article.Article) error {
 	return nil
 }
 
-// doCrossrefCitationRequest requests the article citation
-func doCrossrefCitationRequest(a *article.Article) error {
+// reqCrossrefCitation requests the article citation from Crossref
+func reqCrossrefCitation(a *article.Article) error {
 	u := &url.URL{
 		Scheme: "https",
 		Host:   crossref.API,
@@ -266,4 +289,35 @@ func doCrossrefCitationRequest(a *article.Article) error {
 	}
 
 	return nil
+}
+
+// reqCrossrefMeta requests the article metadata from Crossref
+func reqCrossrefMeta(a *article.Article) (crossref.WorkMessage, error) {
+	u := &url.URL{
+		Scheme: "https",
+		Host:   crossref.API,
+		Path:   crossref.Works,
+	}
+	u = u.JoinPath(url.PathEscape(a.Doi))
+
+	ctx, cncl := context.WithTimeout(context.Background(), GlobalReqTimeout)
+	defer cncl()
+
+	res, err := sendGetRequest(ctx, u.String())
+	if err != nil {
+		return crossref.WorkMessage{}, fmt.Errorf("%w", err)
+	}
+	defer res.Body.Close()
+
+	var msg crossref.WorkMessage
+	b, err := io.ReadAll(res.Body)
+	if err != nil {
+		return crossref.WorkMessage{}, fmt.Errorf("%w", err)
+	}
+	err = json.Unmarshal(b, &msg)
+	if err != nil {
+		return crossref.WorkMessage{}, fmt.Errorf("%w", err)
+	}
+
+	return msg, nil
 }
