@@ -12,9 +12,10 @@ var (
 
 func init() {
 	HTTPUserAgent = fmt.Sprintf(
-		"%v/%v (%v)",
+		"%v/%v (%v; mailto:%v)",
 		Project,
 		Version,
 		Url,
+		Maintainer,
 	)
 }

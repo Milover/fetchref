@@ -55,6 +55,12 @@ func init() {
 		"citation-format",
 		"article citation output format",
 	)
+	rootCmd.PersistentFlags().BoolVar(
+		&fetch.NoUserAgent,
+		"no-user-agent",
+		false,
+		"omit User-Agent header from HTTP requests",
+	)
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.

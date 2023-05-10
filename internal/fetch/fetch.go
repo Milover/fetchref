@@ -33,6 +33,10 @@ var (
 	// CitationFileName is the citation filename base (w/o extension).
 	CitationFileName = "citations"
 
+	// NoUserAgent controls weather to omit the User-Agent header in
+	// HTTP requests.
+	NoUserAgent = false
+
 	// A list of Sci-Hub mirrors.
 	mirrors = []string{
 		"sci-hub.se",
@@ -158,7 +162,9 @@ func sendGetRequest(ctx context.Context, url string) (*http.Response, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w", err)
 	}
-	req.Header.Set("User-Agent", metainfo.HTTPUserAgent)
+	if !NoUserAgent {
+		req.Header.Set("User-Agent", metainfo.HTTPUserAgent)
+	}
 
 	// sendGetRequest can be called from multiple threads
 	GlobalRateLimiter.Take()
