@@ -51,7 +51,7 @@ func (c *ContentType) Set(name string) error {
 		}
 	}
 
-	return fmt.Errorf("unknown content type: %v", name)
+	return fmt.Errorf("unknown content type: %v\navailable types are: %q", name, names)
 }
 
 // String returns the ContentType (name) as a user-friendly string.
