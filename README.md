@@ -8,6 +8,7 @@ Sci-Hub and formatted citations from Crossref from supplied DOIs.
 - [x] Sci-Hub returns HTTP 200 even if the article is unavailable, so sometimes
       we download garbage and we need to check for this somehow
     - if we can't extract the article URL, report and don't attempt download
+- [ ] separate the citation fetching and resource download to different subcommands
 - [ ] add more functionality for managing citations
 	- [ ] add flag for enabling new citations to be appended to an
 		existing `citations` file
@@ -22,10 +23,10 @@ Sci-Hub and formatted citations from Crossref from supplied DOIs.
 		`https://cloudflare-ipfs.com/ipfs/<ipfs_cid>?filename=<md5>.<extension>`
 	- also check available LibGen mirrors
 	- rough JSON endpoint [API reference][libgen_api]
-- [ ] separate the citation fetching and resource download to separate subcommands
 - [ ] rename the project to something more suitable like `getref`, `fetchref` or
 	something
 - [ ] add better logging ([logrus][logrus]) and instrumentation
+    - [logrus][logrus] is probably too heavy, just format the logs better
 - [ ] add unit/integration tests
 
 
