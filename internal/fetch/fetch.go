@@ -149,7 +149,7 @@ func writeCitations(articles []article.Article) error {
 			a.Citation = append(a.Citation, '\n')
 		}
 		if _, err := out.Write(a.Citation); err != nil {
-			return fmt.Errorf("%w", err)
+			return err
 		}
 	}
 	return nil
@@ -160,7 +160,7 @@ func writeCitations(articles []article.Article) error {
 func sendGetRequest(ctx context.Context, url string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("%w", err)
+		return nil, err
 	}
 	if !NoUserAgent {
 		req.Header.Set("User-Agent", metainfo.HTTPUserAgent)
@@ -171,7 +171,7 @@ func sendGetRequest(ctx context.Context, url string) (*http.Response, error) {
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return res, fmt.Errorf("%w", err)
+		return res, err
 	}
 	if res.StatusCode > 399 {
 		return res, fmt.Errorf("%s", res.Status)
@@ -195,13 +195,13 @@ func reqSciHubMirrorInfo(a *article.Article, mirror string) error {
 
 	res, err := sendGetRequest(ctx, u.String())
 	if err != nil {
-		return fmt.Errorf("%w", err)
+		return err
 	}
 	defer res.Body.Close()
 
 	body, err := html.Parse(res.Body)
 	if err != nil {
-		return fmt.Errorf("%w", err)
+		return err
 	}
 
 	// extract url from parsed HTML
@@ -220,7 +220,7 @@ func reqSciHubMirrorInfo(a *article.Article, mirror string) error {
 
 	a.Url, err = url.Parse(hse.data.String())
 	if err != nil {
-		return fmt.Errorf("%w", err)
+		return err
 	}
 	a.Url.Scheme = "https"
 	if len(a.Url.Host) == 0 {
@@ -256,11 +256,11 @@ func reqDownload(a *article.Article) error {
 	defer cncl()
 
 	if a.Url == nil {
-		return fmt.Errorf("URL empty, cannot download article")
+		return fmt.Errorf("could not download article, URL empty")
 	}
 	res, err := sendGetRequest(ctx, a.Url.String())
 	if err != nil {
-		return fmt.Errorf("%w", err)
+		return err
 	}
 	defer res.Body.Close()
 
@@ -272,7 +272,7 @@ func reqDownload(a *article.Article) error {
 
 	if _, err := io.Copy(out, res.Body); err != nil {
 		os.Remove(out.Name())
-		return fmt.Errorf("%w", err)
+		return err
 	}
 
 	return nil
@@ -292,12 +292,12 @@ func reqCrossrefCitation(a *article.Article) error {
 
 	res, err := sendGetRequest(ctx, u.String())
 	if err != nil {
-		return fmt.Errorf("%w", err)
+		return err
 	}
 	defer res.Body.Close()
 
 	if a.Citation, err = io.ReadAll(res.Body); err != nil {
-		return fmt.Errorf("%w", err)
+		return err
 	}
 
 	return nil
@@ -317,18 +317,18 @@ func reqCrossrefMeta(a *article.Article) (crossref.WorkMessage, error) {
 
 	res, err := sendGetRequest(ctx, u.String())
 	if err != nil {
-		return crossref.WorkMessage{}, fmt.Errorf("%w", err)
+		return crossref.WorkMessage{}, err
 	}
 	defer res.Body.Close()
 
 	var msg crossref.WorkMessage
 	b, err := io.ReadAll(res.Body)
 	if err != nil {
-		return crossref.WorkMessage{}, fmt.Errorf("%w", err)
+		return crossref.WorkMessage{}, err
 	}
 	err = json.Unmarshal(b, &msg)
 	if err != nil {
-		return crossref.WorkMessage{}, fmt.Errorf("%w", err)
+		return crossref.WorkMessage{}, err
 	}
 
 	return msg, nil

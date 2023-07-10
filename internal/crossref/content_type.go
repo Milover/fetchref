@@ -2,6 +2,12 @@ package crossref
 
 import "fmt"
 
+var (
+	ErrBadContentType = fmt.Errorf(
+		"unknown content type, available types are: %q",
+		names)
+)
+
 // ContentType represents a content return type supported by Crossref's API.
 type ContentType int
 
@@ -33,14 +39,6 @@ func (c ContentType) FileExtension() string {
 	return extensions[c]
 }
 
-// IsValid checks if the content type value is valid.
-func (c ContentType) IsValid() error {
-	if (int(c) < 0) || (int(c) >= len(names)) {
-		return fmt.Errorf("invalid content type")
-	}
-	return nil
-}
-
 // Set sets the value of the content type based on the provided
 // content type name.
 func (c *ContentType) Set(name string) error {
@@ -50,8 +48,7 @@ func (c *ContentType) Set(name string) error {
 			return nil
 		}
 	}
-
-	return fmt.Errorf("unknown content type: %v\navailable types are: %q", name, names)
+	return ErrBadContentType
 }
 
 // String returns the ContentType (name) as a user-friendly string.
