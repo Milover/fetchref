@@ -204,18 +204,21 @@ func reqSciHubMirrorInfo(a *article.Article, mirror string) error {
 		return fmt.Errorf("%w", err)
 	}
 
-	// extract title and url from parsed HTML
-	ses := []htmlSelectorExtractor{newHse(selectURLNode, extractURL)}
-	getFromHTML(body, ses)
+	// extract url from parsed HTML
+	hse := newHse(selectURLNode, extractURL)
+	getFromHTML(body, hse)
+	if hse.data.Len() == 0 {
+		return fmt.Errorf("could not extract article URL from HTML")
+	}
 
 	// set and check title/body, clean up if necessary
-	//	a.Title = ses[0].data.String()
+	//	a.Title = hse.data.String()
 	//	if len(a.Title) == 0 {
 	//		a.Title = a.Doi
 	//		log.Printf("%v: could not extract title", a.Doi)
 	//	}
 
-	a.Url, err = url.Parse(ses[0].data.String())
+	a.Url, err = url.Parse(hse.data.String())
 	if err != nil {
 		return fmt.Errorf("%w", err)
 	}
@@ -252,6 +255,9 @@ func reqDownload(a *article.Article) error {
 	ctx, cncl := context.WithTimeout(context.Background(), GlobalReqTimeout)
 	defer cncl()
 
+	if a.Url == nil {
+		return fmt.Errorf("URL empty, cannot download article")
+	}
 	res, err := sendGetRequest(ctx, a.Url.String())
 	if err != nil {
 		return fmt.Errorf("%w", err)

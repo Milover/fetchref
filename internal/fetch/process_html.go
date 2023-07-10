@@ -29,16 +29,14 @@ func newHse(
 
 // getFromHTML walks an HTML tree and extracts data.
 // If the current node in the HTML tree is selected by the 'selector', then
-// data is extracted from the node by the 'exctractor', otherwise another node
+// data is extracted from the node by the 'extractor', otherwise another node
 // is selected. Both children and sibling nodes are walked.
-func getFromHTML(n *html.Node, es []htmlSelectorExtractor) {
-	for _, e := range es {
-		if e.selector(n) {
-			e.data.WriteString(e.extractor(n))
-		}
+func getFromHTML(n *html.Node, hse htmlSelectorExtractor) {
+	if hse.selector(n) {
+		hse.data.WriteString(hse.extractor(n))
 	}
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		getFromHTML(c, es)
+		getFromHTML(c, hse)
 	}
 }
 
