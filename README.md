@@ -24,6 +24,8 @@ Sci-Hub and formatted citations from Crossref from supplied DOIs.
 	something
 - [ ] add better logging ([logrus][logrus]) and instrumentation
 - [ ] add unit/integration tests
+- [ ] Sci-Hub returns HTTP 200 even if the article is unavailable, so sometimes
+      we download garbage and we need to check for this somehow
 
 
 [logrus]: https://pkg.go.dev/github.com/sirupsen/logrus
