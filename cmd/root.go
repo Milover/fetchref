@@ -11,17 +11,12 @@ import (
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:     "fetchpaper [options...] <DOI...>",
-	Short:   "Fetch paper(s) from Sci-Hub from supplied DOI(s).",
-	Long:    `Fetch paper(s) from Sci-Hub from supplied DOI(s).`,
+	Use:     "fetchpaper <DOI...>",
+	Short:   "Fetch paper(s) and citations from supplied DOI(s).",
+	Long:    "Fetch paper(s) and citations from supplied DOI(s).",
 	Version: metainfo.Version,
 	Args:    cobra.MinimumNArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		if err := fetch.Fetch(args); err != nil {
-			os.Exit(1)
-		}
-	},
-	DisableFlagsInUseLine: true,
+	RunE:    run,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -34,6 +29,7 @@ func Execute() {
 }
 
 func init() {
+	rootCmd.AddCommand(sourceCmd, citeCmd)
 	// Here you will define your flags and configuration settings.
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
@@ -42,18 +38,6 @@ func init() {
 		"timeout",
 		fetch.GlobalReqTimeout,
 		"HTTP request timeout",
-	)
-	rootCmd.PersistentFlags().StringVarP(
-		&fetch.CitationFileName,
-		"citation-filename",
-		"o",
-		fetch.CitationFileName,
-		"citation output file name, w/o extension",
-	)
-	rootCmd.PersistentFlags().Var(
-		&fetch.CitationFormat,
-		"citation-format",
-		"article citation output format",
 	)
 	rootCmd.PersistentFlags().BoolVar(
 		&fetch.NoUserAgent,
@@ -65,4 +49,28 @@ func init() {
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
 	// rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	rootCmd.Flags().StringVarP(
+		&fetch.CitationFileName,
+		"cite-file",
+		"o",
+		fetch.CitationFileName,
+		"citation output file name, w/o extension",
+	)
+	citeCmd.Flags().StringVarP(
+		&fetch.CitationFileName,
+		"cite-file",
+		"o",
+		fetch.CitationFileName,
+		"citation output file name, w/o extension",
+	)
+	rootCmd.LocalFlags().Var(
+		&fetch.CitationFormat,
+		"cite-format",
+		"article citation output format",
+	)
+	citeCmd.LocalFlags().Var(
+		&fetch.CitationFormat,
+		"cite-format",
+		"article citation output format",
+	)
 }

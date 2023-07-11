@@ -47,9 +47,19 @@ var (
 	}
 )
 
+// FetchMode signifies the mode in which the Fetch function will run.
+type FetchMode int
+
+// Available modes of the Fetch function.
+const (
+	DefaultMode FetchMode = iota
+	SourceMode
+	CiteMode
+)
+
 // Fetch downloads articles from Sci-Hub and/or citations from Crossref,
 // from a list of supplied DOIs.
-func Fetch(dois []string) error {
+func Fetch(mode FetchMode, dois []string) error {
 	if len(dois) == 0 {
 		return nil
 	}
@@ -64,12 +74,16 @@ func Fetch(dois []string) error {
 
 	// fetch articles and citations
 	g := new(errgroup.Group)
-	g.Go(func() error {
-		return fetchArticles(articles)
-	})
-	g.Go(func() error {
-		return fetchCitations(articles)
-	})
+	if mode != CiteMode {
+		g.Go(func() error {
+			return fetchArticles(articles)
+		})
+	}
+	if mode != SourceMode {
+		g.Go(func() error {
+			return fetchCitations(articles)
+		})
+	}
 	return g.Wait()
 }
 

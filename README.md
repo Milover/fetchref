@@ -8,7 +8,7 @@ Sci-Hub and formatted citations from Crossref from supplied DOIs.
 - [x] Sci-Hub returns HTTP 200 even if the article is unavailable, so sometimes
       we download garbage and we need to check for this somehow
     - if we can't extract the article URL, report and don't attempt download
-- [ ] separate the citation fetching and resource download to different subcommands
+- [x] separate the citation fetching and resource download to different subcommands
 - [ ] add more functionality for managing citations
 	- [ ] add flag for enabling new citations to be appended to an
 		existing `citations` file
