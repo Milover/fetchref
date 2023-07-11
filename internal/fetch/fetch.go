@@ -3,6 +3,7 @@ package fetch
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -45,23 +46,40 @@ var (
 	}
 )
 
-// Fetch downloads articles from Sci-Hub from a list of supplied DOIs.
+// Fetch downloads articles from Sci-Hub and/or citations from Crossref,
+// from a list of supplied DOIs.
 func Fetch(dois []string) error {
 	if len(dois) == 0 {
 		return nil
 	}
+	articles := make([]article.Article, 0, len(dois))
 
-	articles := make([]article.Article, len(dois))
-
-	ch := make(chan *article.Article, len(dois))
-	g := new(errgroup.Group)
-	var wg sync.WaitGroup
-	wg.Add(len(dois))
-
-	for i, d := range dois {
-		articles[i] = article.Article{Doi: d}
+	for i := range dois {
+		articles = append(articles, article.Article{Doi: dois[i]})
 		a := &articles[i]
+		// FIXME: the generator should be configurable
 		a.GeneratorFunc(article.SnakeCaseGenerator)
+	}
+
+	g := new(errgroup.Group)
+	g.Go(func() error {
+		return FetchArticles(articles)
+	})
+	g.Go(func() error {
+		return FetchCitations(articles)
+	})
+	return g.Wait()
+}
+
+// FIXME: make this simpler, the synchronization is unnecessarily complex
+func FetchArticles(articles []article.Article) error {
+	ch := make(chan *article.Article, len(articles))
+	g := new(errgroup.Group)
+	var wg sync.WaitGroup // so we know when to close the channel
+	wg.Add(len(articles))
+
+	for i := range articles {
+		a := &articles[i]
 
 		// GET article info
 		g.Go(func() error {
@@ -87,29 +105,18 @@ func Fetch(dois []string) error {
 				a.Title = meta.Message.Title[0]
 				if len(a.Title) == 0 {
 					a.Title = a.Doi
-					log.Printf("%v: could not extract title", a.Doi)
-					return fmt.Errorf("%v: could not extract title", a.Doi)
+					log.Printf("%v: could not set title", a.Doi)
+					return fmt.Errorf("%v: could not set title", a.Doi)
 				}
 				return nil
 			})
-
 			err := eg.Wait()
 			ch <- a
 			return err
 		})
-
-		// GET citation from Crossref
-		// WARNING: doCrossrefRequest should take from 'a channel' even though
-		// it's not necessary as per the current implementation.
-		g.Go(func() error {
-			if err := reqCrossrefCitation(a); err != nil {
-				log.Printf("%v: %v", a.Doi, err)
-				return err
-			}
-			return nil
-		})
-
 		// GET article PDF
+		// FIXME: move this into get article info at the end, and remove
+		// the channel and the WaitGroup
 		g.Go(func() error {
 			if a, ok := <-ch; ok {
 				if err := reqDownload(a); err != nil {
@@ -120,18 +127,31 @@ func Fetch(dois []string) error {
 			return nil
 		})
 	}
-
 	go func() {
 		wg.Wait()
 		close(ch)
 	}()
 
-	errg := g.Wait()
-	errw := writeCitations(articles)
-	if (errg != nil) || (errw != nil) {
-		return fmt.Errorf("errors occurred")
+	return g.Wait()
+}
+
+func FetchCitations(articles []article.Article) error {
+	g := new(errgroup.Group)
+
+	for i := range articles {
+		a := &articles[i]
+
+		g.Go(func() error {
+			if err := reqCrossrefCitation(a); err != nil {
+				log.Printf("%v: %v", a.Doi, err)
+				return err
+			}
+			return nil
+		})
 	}
-	return nil
+	err := g.Wait()
+	err = errors.Join(err, writeCitations(articles))
+	return err
 }
 
 // writeCitations writes all citations to a file.
