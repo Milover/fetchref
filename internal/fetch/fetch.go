@@ -10,10 +10,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/Milover/fetchpaper/internal/article"
 	"github.com/Milover/fetchpaper/internal/crossref"
+	"github.com/Milover/fetchpaper/internal/doiorg"
 	"github.com/Milover/fetchpaper/internal/metainfo"
 	"go.uber.org/ratelimit"
 	"golang.org/x/net/html"
@@ -51,15 +53,33 @@ func Fetch(dois []string) error {
 	if len(dois) == 0 {
 		return nil
 	}
-	articles := make([]article.Article, 0, len(dois))
 
+	// select valid DOIs
+	ch := make(chan string, len(dois))
+	var wg sync.WaitGroup
+	wg.Add(len(dois))
 	for i := range dois {
-		articles = append(articles, article.Article{Doi: dois[i]})
-		a := &articles[i]
+		d := dois[i]
+		go func() {
+			defer wg.Done()
+			if err := logErr(d, CheckDOI(d)); err == nil {
+				ch <- d
+			}
+		}()
+	}
+	wg.Wait()
+	close(ch)
+
+	// build articles from valid DOIs only
+	articles := make([]article.Article, 0, len(ch))
+	for doi := range ch {
+		articles = append(articles, article.Article{Doi: doi})
+		a := &articles[len(articles)-1]
 		// FIXME: the generator should be configurable
 		a.GeneratorFunc(article.SnakeCaseGenerator)
 	}
 
+	// fetch articles and citations
 	g := new(errgroup.Group)
 	g.Go(func() error {
 		return fetchArticles(articles)
@@ -68,6 +88,22 @@ func Fetch(dois []string) error {
 		return fetchCitations(articles)
 	})
 	return g.Wait()
+}
+
+func CheckDOI(doi string) error {
+	u := &url.URL{
+		Scheme:   "https",
+		Host:     doiorg.URL,
+		Path:     doiorg.API,
+		RawQuery: doiorg.QueryTypeNone,
+	}
+	u = u.JoinPath(url.PathEscape(doi))
+
+	ctx, cncl := context.WithTimeout(context.Background(), GlobalReqTimeout)
+	defer cncl()
+
+	_, err := sendGetRequest(ctx, u.String())
+	return err
 }
 
 // WARNING: assumes that articles have DOIs and generator functions set.
