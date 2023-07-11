@@ -174,7 +174,7 @@ func sendGetRequest(ctx context.Context, url string) (*http.Response, error) {
 		return res, err
 	}
 	if res.StatusCode > 399 {
-		return res, fmt.Errorf("%s", res.Status)
+		return res, fmt.Errorf("%s: %s", res.Request.URL, res.Status)
 	}
 	//fmt.Println(res.Header.Get("x-api-pool"))
 
