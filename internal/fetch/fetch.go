@@ -73,6 +73,8 @@ func Fetch(dois []string) error {
 	return g.Wait()
 }
 
+// CheckDOIs is a function which takes a list of DOIs and returns only the
+// (valid) ones registered at doi.org.
 func CheckDOIs(dois []string) []string {
 	ch := make(chan string, len(dois))
 	var wg sync.WaitGroup
@@ -97,6 +99,8 @@ func CheckDOIs(dois []string) []string {
 	return valid
 }
 
+// CheckDOI checks if a doi is valid (registered) by querying doi.org
+// for a good response.
 func CheckDOI(doi string) error {
 	u := &url.URL{
 		Scheme:   "https",
