@@ -53,8 +53,27 @@ func Fetch(dois []string) error {
 	if len(dois) == 0 {
 		return nil
 	}
+	dois = CheckDOIs(dois)
+	articles := make([]article.Article, 0, len(dois))
+	for i := range dois {
+		articles = append(articles, article.Article{Doi: dois[i]})
+		a := &articles[i]
+		// FIXME: the generator should be configurable
+		a.GeneratorFunc(article.SnakeCaseGenerator)
+	}
 
-	// select valid DOIs
+	// fetch articles and citations
+	g := new(errgroup.Group)
+	g.Go(func() error {
+		return fetchArticles(articles)
+	})
+	g.Go(func() error {
+		return fetchCitations(articles)
+	})
+	return g.Wait()
+}
+
+func CheckDOIs(dois []string) []string {
 	ch := make(chan string, len(dois))
 	var wg sync.WaitGroup
 	wg.Add(len(dois))
@@ -70,24 +89,12 @@ func Fetch(dois []string) error {
 	wg.Wait()
 	close(ch)
 
-	// build articles from valid DOIs only
-	articles := make([]article.Article, 0, len(ch))
+	// select valid DOIs
+	valid := make([]string, 0, len(ch))
 	for doi := range ch {
-		articles = append(articles, article.Article{Doi: doi})
-		a := &articles[len(articles)-1]
-		// FIXME: the generator should be configurable
-		a.GeneratorFunc(article.SnakeCaseGenerator)
+		valid = append(valid, doi)
 	}
-
-	// fetch articles and citations
-	g := new(errgroup.Group)
-	g.Go(func() error {
-		return fetchArticles(articles)
-	})
-	g.Go(func() error {
-		return fetchCitations(articles)
-	})
-	return g.Wait()
+	return valid
 }
 
 func CheckDOI(doi string) error {
