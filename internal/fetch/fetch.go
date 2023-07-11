@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/Milover/fetchpaper/internal/article"
@@ -63,94 +62,75 @@ func Fetch(dois []string) error {
 
 	g := new(errgroup.Group)
 	g.Go(func() error {
-		return FetchArticles(articles)
+		return fetchArticles(articles)
 	})
 	g.Go(func() error {
-		return FetchCitations(articles)
+		return fetchCitations(articles)
 	})
 	return g.Wait()
 }
 
-// FIXME: make this simpler, the synchronization is unnecessarily complex
-func FetchArticles(articles []article.Article) error {
-	ch := make(chan *article.Article, len(articles))
+// WARNING: assumes that articles have DOIs and generator functions set.
+func fetchArticles(articles []article.Article) error {
 	g := new(errgroup.Group)
-	var wg sync.WaitGroup // so we know when to close the channel
-	wg.Add(len(articles))
 
 	for i := range articles {
 		a := &articles[i]
 
 		// GET article info
 		g.Go(func() error {
-			defer wg.Done()
 			eg := new(errgroup.Group)
 
 			// GET PDF download link from Sci-Hub
 			eg.Go(func() error {
-				if err := reqSciHubInfo(a); err != nil {
-					log.Printf("%v: %v", a.Doi, err)
-					return err
-				}
-				return nil
+				return logErr(a.Doi, reqSciHubInfo(a))
 			})
 			// GET metadata from Crossref, and set the article title
 			eg.Go(func() error {
 				meta, err := reqCrossrefMeta(a)
 				if err != nil {
-					log.Printf("%v: %v", a.Doi, err)
-					return err
+					return logErr(a.Doi, err)
 				}
 				// WARNING: is it ok to assume that the first item is the one we want?
 				a.Title = meta.Message.Title[0]
 				if len(a.Title) == 0 {
 					a.Title = a.Doi
 					log.Printf("%v: could not set title", a.Doi)
-					return fmt.Errorf("%v: could not set title", a.Doi)
 				}
 				return nil
 			})
-			err := eg.Wait()
-			ch <- a
-			return err
-		})
-		// GET article PDF
-		// FIXME: move this into get article info at the end, and remove
-		// the channel and the WaitGroup
-		g.Go(func() error {
-			if a, ok := <-ch; ok {
-				if err := reqDownload(a); err != nil {
-					log.Printf("%v: %v", a.Doi, err)
-					return err
-				}
+			if err := eg.Wait(); err != nil {
+				return err
 			}
-			return nil
+			// GET article PDF
+			return logErr(a.Doi, reqDownload(a))
 		})
 	}
-	go func() {
-		wg.Wait()
-		close(ch)
-	}()
-
 	return g.Wait()
 }
 
-func FetchCitations(articles []article.Article) error {
+// WARNING: assumes that articles have DOIs set.
+func fetchCitations(articles []article.Article) error {
 	g := new(errgroup.Group)
 
 	for i := range articles {
 		a := &articles[i]
 
 		g.Go(func() error {
-			if err := reqCrossrefCitation(a); err != nil {
-				log.Printf("%v: %v", a.Doi, err)
-				return err
-			}
-			return nil
+			return logErr(a.Doi, reqCrossrefCitation(a))
 		})
 	}
 	err := g.Wait()
 	err = errors.Join(err, writeCitations(articles))
+	return err
+}
+
+// logErr is a helper function which logs err, if it is not nil, and an
+// associated DOI, and returns err.
+func logErr(doi string, err error) error {
+	if err != nil {
+		log.Printf("%v: %v", doi, err)
+	}
 	return err
 }
 
