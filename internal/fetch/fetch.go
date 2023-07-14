@@ -29,11 +29,15 @@ var (
 	// GlobalRateLimiter is the global outgoing HTTP request limiter.
 	GlobalRateLimiter = ratelimit.New(50)
 
-	// CitationFormat is the citation output format.
-	CitationFormat = crossref.BibTeX
+	// CiteFormat is the citation output format.
+	CiteFormat = crossref.BibTeX
 
-	// CitationFileName is the citation filename base (w/o extension).
-	CitationFileName = "citations"
+	// CiteFileName is the citation filename base (w/o extension).
+	CiteFileName = "citations"
+
+	// CiteAppend controls whether the citation file will be
+	// appended to or overwritten.
+	CiteAppend = false
 
 	// NoUserAgent controls weather to omit the User-Agent header in
 	// HTTP requests.
@@ -197,9 +201,15 @@ func logErr(doi string, err error) error {
 
 // writeCitations writes all citations to a file.
 func writeCitations(articles []article.Article) error {
-	out, err := os.Create(CitationFileName + CitationFormat.FileExtension())
+	flag := os.O_RDWR | os.O_CREATE
+	if CiteAppend {
+		flag |= os.O_APPEND
+	} else {
+		flag |= os.O_TRUNC
+	}
+	out, err := os.OpenFile(CiteFileName+CiteFormat.Extension(), flag, 0666)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	defer out.Close()
 	for _, a := range articles {
@@ -346,7 +356,7 @@ func reqCrossrefCitation(a *article.Article) error {
 		Host:   crossref.API,
 		Path:   crossref.Works,
 	}
-	u = u.JoinPath(url.PathEscape(a.Doi), CitationFormat.Endpoint())
+	u = u.JoinPath(url.PathEscape(a.Doi), CiteFormat.Endpoint())
 
 	ctx, cncl := context.WithTimeout(context.Background(), GlobalReqTimeout)
 	defer cncl()

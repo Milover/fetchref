@@ -10,7 +10,7 @@ Sci-Hub and formatted citations from Crossref from supplied DOIs.
     - if we can't extract the article URL, report and don't attempt download
 - [x] separate the citation fetching and resource download to different subcommands
 - [ ] add more functionality for managing citations
-	- [ ] add flag for enabling new citations to be appended to an
+	- [x] add flag for enabling new citations to be appended to an
 		existing `citations` file
 	- [ ] add flag for enabling writing citations to individual files
 		- *some formats only make sense as individual files, e.g. RIS*

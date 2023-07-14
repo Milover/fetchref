@@ -50,27 +50,39 @@ func init() {
 	// when this action is called directly.
 	// rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	rootCmd.Flags().StringVarP(
-		&fetch.CitationFileName,
+		&fetch.CiteFileName,
 		"cite-file",
 		"o",
-		fetch.CitationFileName,
+		fetch.CiteFileName,
 		"citation output file name, w/o extension",
 	)
 	citeCmd.Flags().StringVarP(
-		&fetch.CitationFileName,
+		&fetch.CiteFileName,
 		"cite-file",
 		"o",
-		fetch.CitationFileName,
+		fetch.CiteFileName,
 		"citation output file name, w/o extension",
 	)
-	rootCmd.LocalFlags().Var(
-		&fetch.CitationFormat,
+	rootCmd.Flags().Var(
+		&fetch.CiteFormat,
 		"cite-format",
 		"article citation output format",
 	)
-	citeCmd.LocalFlags().Var(
-		&fetch.CitationFormat,
+	citeCmd.Flags().Var(
+		&fetch.CiteFormat,
 		"cite-format",
 		"article citation output format",
+	)
+	rootCmd.Flags().BoolVar(
+		&fetch.CiteAppend,
+		"cite-append",
+		false,
+		"append citations to file instead of overwriting",
+	)
+	citeCmd.Flags().BoolVar(
+		&fetch.CiteAppend,
+		"cite-append",
+		false,
+		"append citations to file instead of overwriting",
 	)
 }
