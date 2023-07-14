@@ -141,11 +141,15 @@ func CheckDOIs(dois []string) []string {
 // for a good response.
 func CheckDOI(doi string) error {
 	u := &url.URL{
-		Scheme:   "https",
-		Host:     doiorg.URL,
-		Path:     doiorg.API,
-		RawQuery: doiorg.QueryTypeNone,
+		Scheme: "https",
+		Host:   doiorg.URL,
+		Path:   doiorg.API,
 	}
+	// set the query
+	query := url.Values{}
+	query.Add(doiorg.QueryKeyType, doiorg.QueryValType)
+	u.RawQuery = query.Encode()
+
 	u = u.JoinPath(url.PathEscape(doi))
 
 	ctx, cncl := context.WithTimeout(context.Background(), GlobalReqTimeout)
