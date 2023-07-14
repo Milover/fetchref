@@ -85,4 +85,18 @@ func init() {
 		false,
 		"append citations to file instead of overwriting",
 	)
+	rootCmd.Flags().BoolVar(
+		&fetch.CiteSeparate,
+		"cite-separate",
+		false,
+		"write each citation to a different file",
+	)
+	citeCmd.Flags().BoolVar(
+		&fetch.CiteSeparate,
+		"cite-separate",
+		false,
+		"write each citation to a different file",
+	)
+	rootCmd.MarkFlagsMutuallyExclusive("cite-file", "cite-separate")
+	citeCmd.MarkFlagsMutuallyExclusive("cite-file", "cite-separate")
 }

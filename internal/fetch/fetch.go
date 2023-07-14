@@ -39,6 +39,10 @@ var (
 	// appended to or overwritten.
 	CiteAppend = false
 
+	// CiteSeparate controls whether the citations will be written to
+	// separate files
+	CiteSeparate = false
+
 	// NoUserAgent controls weather to omit the User-Agent header in
 	// HTTP requests.
 	NoUserAgent = false
@@ -74,6 +78,22 @@ func Fetch(mode FetchMode, dois []string) error {
 		a := &articles[i]
 		// FIXME: the generator should be configurable
 		a.GeneratorFunc(article.SnakeCaseGenerator)
+	}
+	// fetch article metadata
+	// FIXME: this could be done better:
+	// we're waiting for all metadata requests to finish before requesting
+	// citations, while in reality, both citation and download link fetching
+	// can be done concurrently with the meta data request.
+	// Hence, if we had a better way of naming the individual citation files
+	// (if writing to individual citation files, we need the article names),
+	// or a better way of synchronizing between different requests,
+	// we could make this faster.
+	//
+	// Maybe instead of batching a set of requests for all articles,
+	// we could batch all requests for each article, this would make
+	// correctly ordering/parallelizing requests easier.
+	if err := fetchMetas(articles); err != nil {
+		log.Println("errors occurred during metadata fetch")
 	}
 
 	// fetch articles and citations
@@ -135,6 +155,32 @@ func CheckDOI(doi string) error {
 	return err
 }
 
+// WARNING: assumes that articles have DOIs set.
+func fetchMetas(articles []article.Article) error {
+	g := new(errgroup.Group)
+
+	for i := range articles {
+		a := &articles[i]
+
+		// GET article info
+		g.Go(func() error {
+			// GET metadata from Crossref, and set the article title
+			meta, err := reqCrossrefMeta(a)
+			if err != nil {
+				return logErr(a.Doi, err)
+			}
+			// WARNING: is it ok to assume that the first item is the one we want?
+			a.Title = meta.Message.Title[0]
+			if len(a.Title) == 0 {
+				a.Title = a.Doi
+				log.Printf("%v: could not set title", a.Doi)
+			}
+			return nil
+		})
+	}
+	return g.Wait()
+}
+
 // WARNING: assumes that articles have DOIs and generator functions set.
 func fetchArticles(articles []article.Article) error {
 	g := new(errgroup.Group)
@@ -144,27 +190,8 @@ func fetchArticles(articles []article.Article) error {
 
 		// GET article info
 		g.Go(func() error {
-			eg := new(errgroup.Group)
-
 			// GET PDF download link from Sci-Hub
-			eg.Go(func() error {
-				return logErr(a.Doi, reqSciHubInfo(a))
-			})
-			// GET metadata from Crossref, and set the article title
-			eg.Go(func() error {
-				meta, err := reqCrossrefMeta(a)
-				if err != nil {
-					return logErr(a.Doi, err)
-				}
-				// WARNING: is it ok to assume that the first item is the one we want?
-				a.Title = meta.Message.Title[0]
-				if len(a.Title) == 0 {
-					a.Title = a.Doi
-					log.Printf("%v: could not set title", a.Doi)
-				}
-				return nil
-			})
-			if err := eg.Wait(); err != nil {
+			if err := logErr(a.Doi, reqSciHubInfo(a)); err != nil {
 				return err
 			}
 			// GET article PDF
@@ -199,28 +226,44 @@ func logErr(doi string, err error) error {
 	return err
 }
 
-// writeCitations writes all citations to a file.
-func writeCitations(articles []article.Article) error {
+func openCiteFile(filename string) (*os.File, error) {
 	flag := os.O_RDWR | os.O_CREATE
 	if CiteAppend {
 		flag |= os.O_APPEND
 	} else {
 		flag |= os.O_TRUNC
 	}
-	out, err := os.OpenFile(CiteFileName+CiteFormat.Extension(), flag, 0666)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-	for _, a := range articles {
+	return os.OpenFile(filename, flag, 0666)
+}
+
+// writeCitations writes all citations to a file.
+func writeCitations(articles []article.Article) error {
+	var out *os.File
+	var err error
+	for i, a := range articles {
 		if len(a.Citation) == 0 {
 			continue
 		}
+		// precaution and output readability
 		if a.Citation[len(a.Citation)-1] != '\n' {
 			a.Citation = append(a.Citation, '\n')
 		}
+
+		if CiteSeparate {
+			out, err = openCiteFile(a.GenerateFileName() + CiteFormat.Extension())
+		} else if i == 0 { // open/close only once
+			out, err = openCiteFile(CiteFileName + CiteFormat.Extension())
+			defer out.Close()
+		}
+		if err != nil {
+			return err
+		}
+
 		if _, err := out.Write(a.Citation); err != nil {
 			return err
+		}
+		if CiteSeparate {
+			out.Close()
 		}
 	}
 	return nil
