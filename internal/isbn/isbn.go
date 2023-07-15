@@ -6,8 +6,12 @@ import (
 	"unicode/utf8"
 )
 
-func Valid(n string) bool {
-	str := strings.ReplaceAll(n, "-", "")
+func Clean(n string) string {
+	return strings.ReplaceAll(n, "-", "")
+}
+
+func IsValid(n string) bool {
+	str := Clean(n)
 
 	if len(str) == 10 {
 		return valid10(str)

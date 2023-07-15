@@ -6,7 +6,7 @@ package libgen
 //	http://faq.fyicenter.com/1231_What_Is_Library_Genesis_API.html
 //	https://libgen.lc/json.php
 
-const (
+var (
 	// Mirrors is a list of libgen mirror URLs
 	Mirrors = []string{
 		"libgen.is",
@@ -22,6 +22,8 @@ const (
 const (
 	QueryKeyFields string = "fields"
 	QueryValFields string = "*"
+	QueryKeyLimit  string = "limit1"
+	QueryValLimit  string = "10"
 	QueryKeyISBN   string = "isbn"
 )
 

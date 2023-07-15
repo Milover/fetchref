@@ -85,10 +85,10 @@ var isbnTests = []isbnTest{
 	},
 }
 
-func TestValid(t *testing.T) {
+func TestIsValid(t *testing.T) {
 	for _, tt := range isbnTests {
 		t.Run(tt.Name, func(t *testing.T) {
-			out := Valid(tt.Input)
+			out := IsValid(tt.Input)
 			assert.Equal(t, tt.Output, out)
 		})
 	}

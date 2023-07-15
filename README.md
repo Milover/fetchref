@@ -15,7 +15,7 @@ Sci-Hub and formatted citations from Crossref from supplied DOIs.
 		existing `citations` file
 	- [x] add flag for enabling writing citations to individual files
 		- *some formats only make sense as individual files, e.g. RIS*
-- [ ] add book-fetch by ISBN from LibGen
+- [x] add book-fetch by ISBN from LibGen
 	- fetch all available versions of the book from:
 	  `libgen.is/json.php?isbn=<isbn>&fields='*'`
 	- pick the best match by available file format and size, language, No. pages,
@@ -24,6 +24,8 @@ Sci-Hub and formatted citations from Crossref from supplied DOIs.
 		`https://cloudflare-ipfs.com/ipfs/<ipfs_cid>?filename=<md5>.<extension>`
 	- also check available LibGen mirrors
 	- rough JSON endpoint [API reference][libgen_api]
+	- **getting book citations is currently not super reliable**, this should
+	  be fixed at some point in the future
 - [ ] rename the project to something more suitable like `getref`, `fetchref` or
 	something
 - [ ] add better logging ([logrus][logrus]) and instrumentation
