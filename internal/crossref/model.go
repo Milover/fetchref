@@ -15,17 +15,24 @@ import "encoding/json"
 const (
 	// API is the URL of Crossref's REST API.
 	API string = "api.crossref.org"
+
+	QueryKeyBib            string = "query.bibliographic"
+	QueryKeyFilter         string = "filter"
+	QueryValFilterISBN     string = "isbn:"
+	QueryValFilterTypeBook string = "type:book"
+	QueryKeyRows           string = "rows"
+	QueryValRows           string = "1"
 )
 
 // Crossref's REST API endpoints.
 const (
-	Funders  string = "funders"
-	Journals string = "journals"
-	Licences string = "licenses"
-	Members  string = "members"
-	Prefixes string = "prefixes"
-	Types    string = "types"
-	Works    string = "works"
+	APIFunders  string = "funders"
+	APIJournals string = "journals"
+	APILicences string = "licenses"
+	APIMembers  string = "members"
+	APIPrefixes string = "prefixes"
+	APITypes    string = "types"
+	APIWorks    string = "works"
 )
 
 // Affiliation holds the name of an affiliated institution.
@@ -60,6 +67,12 @@ type Date struct {
 type DateParts struct {
 	// DateParts is an ordered array of year, month and day.
 	DateParts [][]int `json:"date-parts"`
+}
+
+// Query holds information about the endpoint query.
+type Query struct {
+	StartIndex  int    `json:"start-index"`
+	SearchTerms string `json:"search-terms"`
 }
 
 // Reference holds basic data about a work which references another work.
@@ -133,7 +146,7 @@ type Work struct {
 	Language            string              `json:"language"`
 	Link                []WorkLink          `json:"link"`
 	Deposited           Date                `json:"deposited"`
-	Score               int                 `json:"score"`
+	Score               float64             `json:"score"`
 	Degree              string              `json:"degree"`
 	Subtitle            []string            `json:"subtitle"`
 	Translator          []Author            `json:"translator"`
@@ -289,6 +302,24 @@ type WorkUpdate struct {
 	Type string `json:"type"`
 	// Updated is the date on which the update was published.
 	Updated Date `json:"updated"`
+}
+
+// Works holds information about a list of works resulting from querying an
+// endpoint.
+type Works struct {
+	ItemsPerPage int    `json:"items-per-page"`
+	Query        Query  `json:"query"`
+	TotalResults int    `json:"total-results"`
+	NextCursor   string `json:"next-cursor"`
+	Items        []Work `json:"items"`
+}
+
+// WorksMessage is the response from querying the works endpoint.
+type WorksMessage struct {
+	Status         string `json:"status"`
+	MessageType    string `json:"message-type"`
+	MessageVersion string `json:"message-version"`
+	Message        Works  `json:"message"`
 }
 
 // WorksMessageMessageItemsAssertionGroup holds data about the group to which

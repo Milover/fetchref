@@ -14,6 +14,8 @@ const (
 
 // doi.org's REST API query parameters.
 const (
-	QueryTypeNone string = "type=none"
-	QueryPretty   string = "pretty=true"
+	QueryKeyType   string = "type"
+	QueryValType   string = "none"
+	QueryKeyPretty string = "pretty"
+	QueryValPretty string = "true"
 )

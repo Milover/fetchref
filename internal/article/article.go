@@ -6,16 +6,19 @@ import (
 	"unicode"
 )
 
+type fileNameFunc func(*Article) string
+
 // The Article holds data needed to download and write the article to disc.
 // The DOI is used to fetch the title and PDF URL from Sci-Hub.
 type Article struct {
-	Doi      string
+	Handle   Handle // article identifier DOI, ISBN, ISSN...
+	DOI      string
 	Title    string
 	Url      *url.URL // PDF download link
 	Citation []byte
 
-	// fileNameGenerator generates a file name for the article
-	fileNameGenerator func(Article) string
+	// generator generates a (file) name for the article
+	generator fileNameFunc
 
 	// fileName is the (local) name of the article file
 	fileName string
@@ -27,18 +30,17 @@ func (a *Article) Reset() {
 }
 
 // GeneratorFunc assigns a new generator
-func (a *Article) GeneratorFunc(fileNameGenerator func(Article) string) {
-	a.fileNameGenerator = fileNameGenerator
+func (a *Article) GeneratorFunc(g fileNameFunc) {
+	a.generator = g
 }
 
 // GenerateFileName generates and caches the file name of the article.
 func (a *Article) GenerateFileName() string {
-	if a.fileNameGenerator == nil {
+	if a.generator == nil {
 		panic("file name generator not set")
 	}
-
 	if len(a.fileName) == 0 {
-		a.fileName = a.fileNameGenerator(*a)
+		a.fileName = a.generator(a)
 	}
 	return a.fileName
 }
@@ -47,7 +49,7 @@ func (a *Article) GenerateFileName() string {
 // title. All punctuation, spaces and control codes are replaced by '_'s, which
 // are squeezed.
 // No extension is added to the file name.
-func SnakeCaseGenerator(a Article) string {
+func SnakeCaseGenerator(a *Article) string {
 	var b strings.Builder
 	var cache rune
 

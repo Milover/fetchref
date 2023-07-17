@@ -16,6 +16,8 @@ import (
 	"github.com/Milover/fetchpaper/internal/article"
 	"github.com/Milover/fetchpaper/internal/crossref"
 	"github.com/Milover/fetchpaper/internal/doiorg"
+	"github.com/Milover/fetchpaper/internal/isbn"
+	"github.com/Milover/fetchpaper/internal/libgen"
 	"github.com/Milover/fetchpaper/internal/metainfo"
 	"go.uber.org/ratelimit"
 	"golang.org/x/net/html"
@@ -66,15 +68,15 @@ const (
 )
 
 // Fetch downloads articles from Sci-Hub and/or citations from Crossref,
-// from a list of supplied DOIs.
-func Fetch(mode FetchMode, dois []string) error {
-	if len(dois) == 0 {
+// from a list of supplied handles (DOIs and/or ISBNs).
+func Fetch(mode FetchMode, handles []string) error {
+	if len(handles) == 0 {
 		return nil
 	}
-	dois = CheckDOIs(dois)
-	articles := make([]article.Article, 0, len(dois))
-	for i := range dois {
-		articles = append(articles, article.Article{Doi: dois[i]})
+	valid := validHandles(handles)
+	articles := make([]article.Article, 0, len(valid))
+	for i := range valid {
+		articles = append(articles, article.Article{Handle: valid[i]})
 		a := &articles[i]
 		// FIXME: the generator should be configurable
 		a.GeneratorFunc(article.SnakeCaseGenerator)
@@ -111,28 +113,36 @@ func Fetch(mode FetchMode, dois []string) error {
 	return g.Wait()
 }
 
-// CheckDOIs is a function which takes a list of DOIs and returns only the
-// (valid) ones registered at doi.org.
-func CheckDOIs(dois []string) []string {
-	ch := make(chan string, len(dois))
+// CheckISBNs is a function which takes a list of handles and returns
+// a slice of ints which represent indices of valid ISBNs present
+// in the original slice of handles.
+// CheckDOIs is a function which takes a list of DOIs and returns
+// a slice of ints which represent indices of valid DOIs
+// (ones registered at doi.org) in the original slice of handles.
+func validHandles(handles []string) []article.Handle {
 	var wg sync.WaitGroup
-	wg.Add(len(dois))
-	for i := range dois {
-		d := dois[i]
-		go func() {
-			defer wg.Done()
-			if err := logErr(d, CheckDOI(d)); err == nil {
-				ch <- d
-			}
-		}()
+	ch := make(chan article.Handle, len(handles))
+	valid := make([]article.Handle, 0, len(handles))
+	for i := range handles {
+		h := handles[i]
+		if isbn.IsValid(h) {
+			valid = append(valid, article.Handle{
+				Value: isbn.Clean(h),
+				Type:  article.ISBN})
+		} else {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if err := logErr(h, CheckDOI(h)); err == nil {
+					ch <- article.Handle{Value: h, Type: article.DOI}
+				}
+			}()
+		}
 	}
 	wg.Wait()
 	close(ch)
-
-	// select valid DOIs
-	valid := make([]string, 0, len(ch))
-	for doi := range ch {
-		valid = append(valid, doi)
+	for h := range ch {
+		valid = append(valid, h)
 	}
 	return valid
 }
@@ -141,11 +151,15 @@ func CheckDOIs(dois []string) []string {
 // for a good response.
 func CheckDOI(doi string) error {
 	u := &url.URL{
-		Scheme:   "https",
-		Host:     doiorg.URL,
-		Path:     doiorg.API,
-		RawQuery: doiorg.QueryTypeNone,
+		Scheme: "https",
+		Host:   doiorg.URL,
+		Path:   doiorg.API,
 	}
+	// set the query
+	query := url.Values{}
+	query.Add(doiorg.QueryKeyType, doiorg.QueryValType)
+	u.RawQuery = query.Encode()
+
 	u = u.JoinPath(url.PathEscape(doi))
 
 	ctx, cncl := context.WithTimeout(context.Background(), GlobalReqTimeout)
@@ -164,17 +178,27 @@ func fetchMetas(articles []article.Article) error {
 
 		// GET article info
 		g.Go(func() error {
+			// fallback
+			defer func() {
+				if len(a.Title) == 0 {
+					a.Title = a.Handle.Value
+					log.Printf("%v: could not set title", a.Handle.Value)
+				}
+				if len(a.DOI) == 0 {
+					log.Printf("%v: could not set DOI", a.Handle.Value)
+				}
+			}()
 			// GET metadata from Crossref, and set the article title
 			meta, err := reqCrossrefMeta(a)
+			//fmt.Printf("meta:\n%+v\n", meta)
 			if err != nil {
-				return logErr(a.Doi, err)
+				return logErr(a.Handle.Value, err)
 			}
-			// WARNING: is it ok to assume that the first item is the one we want?
-			a.Title = meta.Message.Title[0]
-			if len(a.Title) == 0 {
-				a.Title = a.Doi
-				log.Printf("%v: could not set title", a.Doi)
+			// XXX: is it ok to assume that the first item is the one we want?
+			if len(meta.Title) != 0 {
+				a.Title = meta.Title[0]
 			}
+			a.DOI = meta.DOI
 			return nil
 		})
 	}
@@ -191,11 +215,11 @@ func fetchArticles(articles []article.Article) error {
 		// GET article info
 		g.Go(func() error {
 			// GET PDF download link from Sci-Hub
-			if err := logErr(a.Doi, reqSciHubInfo(a)); err != nil {
+			if err := logErr(a.Handle.Value, reqArticleInfo(a)); err != nil {
 				return err
 			}
 			// GET article PDF
-			return logErr(a.Doi, reqDownload(a))
+			return logErr(a.Handle.Value, reqDownload(a))
 		})
 	}
 	return g.Wait()
@@ -209,7 +233,7 @@ func fetchCitations(articles []article.Article) error {
 		a := &articles[i]
 
 		g.Go(func() error {
-			return logErr(a.Doi, reqCrossrefCitation(a))
+			return logErr(a.Handle.Value, reqCrossrefCitation(a))
 		})
 	}
 	err := g.Wait()
@@ -298,10 +322,13 @@ func sendGetRequest(ctx context.Context, url string) (*http.Response, error) {
 // reqSciHubMirrorInfo requests article info from a Sci-Hub mirror
 // and parses the article title and download URL from the response HTML.
 func reqSciHubMirrorInfo(a *article.Article, mirror string) error {
+	if len(a.DOI) == 0 {
+		return fmt.Errorf("cannot retrieve article info, DOI not set")
+	}
 	u := &url.URL{
 		Scheme: "https",
 		Host:   mirror,
-		Path:   a.Doi,
+		Path:   a.DOI,
 	}
 
 	ctx, cncl := context.WithTimeout(context.Background(), GlobalReqTimeout)
@@ -325,13 +352,6 @@ func reqSciHubMirrorInfo(a *article.Article, mirror string) error {
 		return fmt.Errorf("could not extract article URL from HTML")
 	}
 
-	// set and check title/body, clean up if necessary
-	//	a.Title = hse.data.String()
-	//	if len(a.Title) == 0 {
-	//		a.Title = a.Doi
-	//		log.Printf("%v: could not extract title", a.Doi)
-	//	}
-
 	a.Url, err = url.Parse(hse.data.String())
 	if err != nil {
 		return err
@@ -344,13 +364,74 @@ func reqSciHubMirrorInfo(a *article.Article, mirror string) error {
 	return nil
 }
 
-// reqSciHubInfo requests article info from Sci-Hub, and updates the article
+// reqLibgenMirrorInfo requests article info from a Sci-Hub mirror
+// and parses the article title and download URL from the response HTML.
+func reqLibgenMirrorInfo(a *article.Article, mirror string) error {
+	u := &url.URL{
+		Scheme: "https",
+		Host:   mirror,
+		Path:   libgen.API,
+	}
+	query := url.Values{}
+	query.Add(libgen.QueryKeyFields, libgen.QueryValFields)
+	query.Add(libgen.QueryKeyLimit, libgen.QueryValLimit)
+	query.Add(libgen.QueryKeyISBN, a.Handle.Value)
+	u.RawQuery = query.Encode()
+
+	ctx, cncl := context.WithTimeout(context.Background(), GlobalReqTimeout)
+	defer cncl()
+
+	res, err := sendGetRequest(ctx, u.String())
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	var msgs []libgen.Message
+	b, err := io.ReadAll(res.Body)
+	if err != nil {
+		return err
+	}
+	err = json.Unmarshal(b, &msgs)
+	if err != nil {
+		return err
+	}
+	if len(msgs) == 0 {
+		return fmt.Errorf("libgen: no query results")
+	}
+
+	a.Url = &url.URL{
+		Scheme: "https",
+		Host:   "cloudflare-ipfs.com",
+		Path:   "ipfs",
+	}
+	a.Url = a.Url.JoinPath(msgs[0].IpfsCID)
+	query = url.Values{}
+	query.Add("filename", msgs[0].MD5+"."+msgs[0].Extension)
+	a.Url.RawQuery = query.Encode()
+
+	return nil
+}
+
+// reqArticleInfo requests article info from Sci-Hub, and updates the article
 // if successful. On a failed request, another Sci-Hub mirror is chosen,
 // until all mirrors have been exhausted.
-func reqSciHubInfo(a *article.Article) error {
-	for i, m := range mirrors {
-		if err := reqSciHubMirrorInfo(a, m); err != nil {
-			log.Printf("%v: %v", a.Doi, err)
+func reqArticleInfo(a *article.Article) error {
+	var mrs []string
+	var reqFn func(*article.Article, string) error
+	switch a.Handle.Type {
+	case article.ISBN:
+		mrs = libgen.Mirrors
+		reqFn = reqLibgenMirrorInfo
+	case article.DOI:
+		mrs = mirrors
+		reqFn = reqSciHubMirrorInfo
+	default:
+		return fmt.Errorf("unknown article handle type: %v", a.Handle.Type)
+	}
+	for i, m := range mrs {
+		if err := reqFn(a, m); err != nil {
+			log.Printf("%v: %v", a.Handle.Value, err)
 			// fail if there are no more mirrors to try
 			if i == len(mirrors)-1 {
 				return fmt.Errorf("could not get article info")
@@ -359,7 +440,6 @@ func reqSciHubInfo(a *article.Article) error {
 			break
 		}
 	}
-
 	return nil
 }
 
@@ -378,6 +458,8 @@ func reqDownload(a *article.Article) error {
 	}
 	defer res.Body.Close()
 
+	// FIXME: we don't know if it will be a PDF
+	//fmt.Printf("article:\n %+v\n", *a)
 	out, err := os.Create(a.GenerateFileName() + ".pdf")
 	if err != nil {
 		panic(err)
@@ -393,13 +475,17 @@ func reqDownload(a *article.Article) error {
 }
 
 // reqCrossrefCitation requests the article citation from Crossref
+// FIXME: probably doesn't work for ISBNs
 func reqCrossrefCitation(a *article.Article) error {
+	if len(a.DOI) == 0 {
+		return fmt.Errorf("cannot retrieve citation, DOI not set")
+	}
 	u := &url.URL{
 		Scheme: "https",
 		Host:   crossref.API,
-		Path:   crossref.Works,
+		Path:   crossref.APIWorks,
 	}
-	u = u.JoinPath(url.PathEscape(a.Doi), CiteFormat.Endpoint())
+	u = u.JoinPath(url.PathEscape(a.DOI), CiteFormat.Endpoint())
 
 	ctx, cncl := context.WithTimeout(context.Background(), GlobalReqTimeout)
 	defer cncl()
@@ -418,32 +504,61 @@ func reqCrossrefCitation(a *article.Article) error {
 }
 
 // reqCrossrefMeta requests the article metadata from Crossref
-func reqCrossrefMeta(a *article.Article) (crossref.WorkMessage, error) {
+func reqCrossrefMeta(a *article.Article) (crossref.Work, error) {
 	u := &url.URL{
 		Scheme: "https",
 		Host:   crossref.API,
-		Path:   crossref.Works,
+		Path:   crossref.APIWorks,
 	}
-	u = u.JoinPath(url.PathEscape(a.Doi))
+	switch a.Handle.Type {
+	case article.ISBN:
+		query := url.Values{}
+		query.Add(crossref.QueryKeyBib, a.Handle.Value)
+		query.Add(crossref.QueryKeyRows, crossref.QueryValRows)
+		query.Add(crossref.QueryKeyFilter,
+			crossref.QueryValFilterTypeBook+","+
+				crossref.QueryValFilterISBN+a.Handle.Value)
+		u.RawQuery = query.Encode()
+		//fmt.Println("meta url:", u.String())
+	case article.DOI:
+		u = u.JoinPath(url.PathEscape(a.Handle.Value))
+	default:
+		return crossref.Work{}, fmt.Errorf("unknown article handle type: %v", a.Handle.Type)
+	}
 
 	ctx, cncl := context.WithTimeout(context.Background(), GlobalReqTimeout)
 	defer cncl()
 
 	res, err := sendGetRequest(ctx, u.String())
 	if err != nil {
-		return crossref.WorkMessage{}, err
+		return crossref.Work{}, err
 	}
 	defer res.Body.Close()
 
-	var msg crossref.WorkMessage
 	b, err := io.ReadAll(res.Body)
 	if err != nil {
-		return crossref.WorkMessage{}, err
-	}
-	err = json.Unmarshal(b, &msg)
-	if err != nil {
-		return crossref.WorkMessage{}, err
+		return crossref.Work{}, err
 	}
 
-	return msg, nil
+	switch a.Handle.Type {
+	case article.ISBN:
+		var msg crossref.WorksMessage
+		err = json.Unmarshal(b, &msg)
+		if err != nil {
+			return crossref.Work{}, err
+		}
+		if len(msg.Message.Items) == 0 {
+			return crossref.Work{}, fmt.Errorf("crossref: no query results")
+		}
+		return msg.Message.Items[0], nil
+	case article.DOI:
+		var msg crossref.WorkMessage
+		err = json.Unmarshal(b, &msg)
+		if err != nil {
+			return crossref.Work{}, err
+		}
+		return msg.Message, nil
+	default:
+		return crossref.Work{}, fmt.Errorf("unknown article handle type: %v", a.Handle.Type)
+	}
 }
