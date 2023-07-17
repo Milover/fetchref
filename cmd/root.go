@@ -11,19 +11,21 @@ import (
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:     "fetchpaper <DOI...>",
-	Short:   "Fetch paper(s) and citations from supplied DOI(s).",
-	Long:    "Fetch paper(s) and citations from supplied DOI(s).",
-	Version: metainfo.Version,
-	Args:    cobra.MinimumNArgs(1),
-	RunE:    run,
+	Use:           "fetchpaper <DOI...>",
+	Short:         "Fetch paper(s) and citations from supplied DOI(s).",
+	Long:          "Fetch paper(s) and citations from supplied DOI(s).",
+	Version:       metainfo.Version,
+	SilenceUsage:  true,
+	SilenceErrors: true,
+	Args:          cobra.MinimumNArgs(1),
+	RunE:          run,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
