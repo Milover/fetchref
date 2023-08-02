@@ -5,6 +5,9 @@ Sci-Hub and formatted citations from Crossref from supplied DOIs.
 
 ## TODO
 
+- [ ] release stuff
+    - [ ] setup GitHub actions/releases
+    - [ ] publish on [pkg.go.dev](https://pkg.go.dev/)?
 - [x] Sci-Hub returns HTTP 200 even if the article is unavailable, so sometimes
       we download garbage and we need to check for this somehow
     - if we can't extract the article URL, report and don't attempt download
