@@ -4,16 +4,16 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Milover/fetchpaper/internal/fetch"
-	"github.com/Milover/fetchpaper/internal/metainfo"
+	"github.com/Milover/fetchref/internal/fetch"
+	"github.com/Milover/fetchref/internal/metainfo"
 	"github.com/spf13/cobra"
 )
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:           "fetchpaper <DOI...>",
-	Short:         "Fetch paper(s) and citations from supplied DOI(s).",
-	Long:          "Fetch paper(s) and citations from supplied DOI(s).",
+	Use:           "fetchref <DOI...>",
+	Short:         "Fetch articles/books and citations from supplied DOI(s)/ISBN(s).",
+	Long:          "Fetch articles/books and citations from supplied DOI(s)/ISBN(s).",
 	Version:       metainfo.Version,
 	SilenceUsage:  true,
 	SilenceErrors: true,

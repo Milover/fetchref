@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/Milover/fetchpaper/internal/fetch"
+	"github.com/Milover/fetchref/internal/fetch"
 	"github.com/spf13/cobra"
 )
 
