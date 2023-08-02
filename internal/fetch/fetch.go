@@ -113,12 +113,8 @@ func Fetch(mode FetchMode, handles []string) error {
 	return g.Wait()
 }
 
-// CheckISBNs is a function which takes a list of handles and returns
-// a slice of ints which represent indices of valid ISBNs present
-// in the original slice of handles.
-// CheckDOIs is a function which takes a list of DOIs and returns
-// a slice of ints which represent indices of valid DOIs
-// (ones registered at doi.org) in the original slice of handles.
+// validHandles selects valid handles (DOI, ISBN...) from a list of handles
+// and returns a list of properly typed, valid handles.
 func validHandles(handles []string) []article.Handle {
 	var wg sync.WaitGroup
 	ch := make(chan article.Handle, len(handles))

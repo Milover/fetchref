@@ -7,8 +7,8 @@ import (
 
 var sourceCmd = &cobra.Command{
 	Use:           "source <DOI...>",
-	Short:         "Fetch paper(s) from Sci-Hub from supplied DOI(s).",
-	Long:          "Fetch paper(s) from Sci-Hub from supplied DOI(s).",
+	Short:         "Fetch reference(s) from Sci-Hub/Libgen from supplied DOI(s)/ISBN(s).",
+	Long:          "Fetch reference(s) from Sci-Hub/Libgen from supplied DOI(s)/ISBN(s).",
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	Args:          cobra.MinimumNArgs(1),
